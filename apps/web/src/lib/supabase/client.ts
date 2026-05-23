@@ -1,7 +1,3 @@
-// Browser-side Supabase client. Use this inside client components.
-// Reads cookies via document.cookie under the hood.
-"use client";
-
 import { createBrowserClient } from "@supabase/ssr";
 
 export function createClient() {

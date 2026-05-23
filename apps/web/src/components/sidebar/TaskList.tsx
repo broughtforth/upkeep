@@ -1,81 +1,178 @@
 "use client";
 
-import type { TaskInstanceWithDetails } from "@upkeep/shared";
+import { useAppStore } from "@/lib/store";
+import type { TaskCategory, TaskInstance } from "@/lib/types";
 
-const STATUS_DOT: Record<string, string> = {
-  pending: "bg-neutral-300",
-  in_progress: "bg-amber-500",
-  complete: "bg-green-500",
+const CATEGORY_SYMBOL: Record<TaskCategory, string> = {
+  cleaning: "◐",
+  supplies: "⚡",
+  cooking: "⌂",
+  laundry: "≋",
 };
 
-export function TaskList({
-  instances,
-}: {
-  instances: TaskInstanceWithDetails[];
-}) {
-  const groups = {
-    in_progress: instances.filter((i) => i.status === "in_progress"),
-    pending: instances.filter((i) => i.status === "pending"),
-    complete: instances.filter((i) => i.status === "complete"),
-  };
+export function TaskList() {
+  const instances = useAppStore((s) => s.instances);
+  const templates = useAppStore((s) => s.templates);
+  const rooms = useAppStore((s) => s.rooms);
+  const profiles = useAppStore((s) => s.profiles);
+  const selectInstance = useAppStore((s) => s.selectInstance);
+
+  const templateById = Object.fromEntries(templates.map((t) => [t.id, t]));
+  const roomById = Object.fromEntries(rooms.map((r) => [r.id, r]));
+  const profileById = Object.fromEntries(profiles.map((p) => [p.id, p]));
+
+  const pending = instances.filter((i) => i.status === "pending");
+  const assigned = instances.filter((i) => i.status === "assigned");
+  const done = instances.filter((i) => i.status === "completed");
+
+  const completedCount = done.length;
+  const total = instances.length;
 
   return (
-    <aside className="flex flex-col gap-3 overflow-y-auto rounded-2xl border border-neutral-200 bg-neutral-50/50 p-3">
-      <header className="px-1">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">
-          Today
-        </h2>
-        <p className="mt-1 text-xs text-neutral-400">
-          {instances.length} task{instances.length === 1 ? "" : "s"} · drop on
-          a room to assign.
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="border-b border-neutral-200 px-5 py-4">
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-serif text-base font-semibold tracking-tight">
+            Today's Rituals
+          </h2>
+          <span className="font-mono text-[11px] text-neutral-500">
+            {completedCount}/{total}
+          </span>
+        </div>
+        <div className="mt-2 h-1 overflow-hidden rounded-full bg-neutral-100">
+          <div
+            className="h-full bg-green-500 transition-all"
+            style={{ width: `${(completedCount / Math.max(total, 1)) * 100}%` }}
+          />
+        </div>
+        <p className="mt-3 text-[10px] uppercase tracking-[0.18em] text-neutral-500">
+          Use with intent · Reset completely
         </p>
-      </header>
+      </div>
 
-      <Group label="In progress" items={groups.in_progress} />
-      <Group label="Pending" items={groups.pending} />
-      <Group label="Done" items={groups.complete} />
-    </aside>
+      <div className="flex-1 space-y-5 overflow-y-auto p-4">
+        {pending.length > 0 && (
+          <Section title="Pending" count={pending.length} dotClass="bg-red-500">
+            {pending.map((i) => (
+              <TaskRow
+                key={i.id}
+                instance={i}
+                templateName={templateById[i.template_id]?.name ?? "Task"}
+                templateSymbol={CATEGORY_SYMBOL[templateById[i.template_id]?.category ?? "cleaning"]}
+                roomName={roomById[i.room_id]?.name ?? "Room"}
+                assigneeName={null}
+                onClick={() => selectInstance(i.id)}
+              />
+            ))}
+          </Section>
+        )}
+
+        {assigned.length > 0 && (
+          <Section title="In Progress" count={assigned.length} dotClass="bg-orange-500">
+            {assigned.map((i) => (
+              <TaskRow
+                key={i.id}
+                instance={i}
+                templateName={templateById[i.template_id]?.name ?? "Task"}
+                templateSymbol={CATEGORY_SYMBOL[templateById[i.template_id]?.category ?? "cleaning"]}
+                roomName={roomById[i.room_id]?.name ?? "Room"}
+                assigneeName={i.assignee_id ? profileById[i.assignee_id]?.full_name ?? null : null}
+                onClick={() => selectInstance(i.id)}
+              />
+            ))}
+          </Section>
+        )}
+
+        {done.length > 0 && (
+          <Section title="Complete" count={done.length} dotClass="bg-green-500">
+            {done.map((i) => (
+              <TaskRow
+                key={i.id}
+                instance={i}
+                templateName={templateById[i.template_id]?.name ?? "Task"}
+                templateSymbol={CATEGORY_SYMBOL[templateById[i.template_id]?.category ?? "cleaning"]}
+                roomName={roomById[i.room_id]?.name ?? "Room"}
+                assigneeName={i.assignee_id ? profileById[i.assignee_id]?.full_name ?? null : null}
+                onClick={() => selectInstance(i.id)}
+                muted
+              />
+            ))}
+          </Section>
+        )}
+      </div>
+    </div>
   );
 }
 
-function Group({
-  label,
-  items,
+function Section({
+  title,
+  count,
+  dotClass,
+  children,
 }: {
-  label: string;
-  items: TaskInstanceWithDetails[];
+  title: string;
+  count: number;
+  dotClass: string;
+  children: React.ReactNode;
 }) {
-  if (items.length === 0) return null;
   return (
-    <section className="flex flex-col gap-1.5">
-      <h3 className="px-1 text-[11px] font-semibold uppercase tracking-widest text-neutral-400">
-        {label}
-      </h3>
-      <ul className="flex flex-col gap-1.5">
-        {items.map((i) => (
-          <li
-            key={i.id}
-            className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm"
-          >
-            <span
-              className={`inline-flex h-2 w-2 shrink-0 rounded-full ${
-                STATUS_DOT[i.status] ?? "bg-neutral-300"
-              }`}
-            />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold">
-                {i.template?.title}
-              </p>
-              <p className="truncate text-[11px] text-neutral-500">
-                {i.room?.name ?? "Whole house"}
-                {i.assignee
-                  ? ` · ${i.assignee.full_name ?? i.assignee.email.split("@")[0]}`
-                  : ""}
-              </p>
-            </div>
-          </li>
-        ))}
-      </ul>
+    <section>
+      <div className="mb-2 flex items-center gap-2 px-1">
+        <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+        <h3 className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
+          {title}
+        </h3>
+        <span className="text-[10px] text-neutral-400">{count}</span>
+      </div>
+      <div className="space-y-1.5">{children}</div>
     </section>
+  );
+}
+
+function TaskRow({
+  instance,
+  templateName,
+  templateSymbol,
+  roomName,
+  assigneeName,
+  onClick,
+  muted = false,
+}: {
+  instance: TaskInstance;
+  templateName: string;
+  templateSymbol: string;
+  roomName: string;
+  assigneeName: string | null;
+  onClick: () => void;
+  muted?: boolean;
+}) {
+  const time = new Date(instance.scheduled_for).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return (
+    <button
+      onClick={onClick}
+      className={`group flex w-full items-start gap-3 rounded-lg border border-neutral-200 px-3 py-2.5 text-left transition hover:border-neutral-300 hover:bg-neutral-50 ${
+        muted ? "opacity-70" : ""
+      }`}
+    >
+      <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md bg-neutral-100 font-serif text-base text-neutral-700">
+        {templateSymbol}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-medium leading-tight text-neutral-900">
+          {templateName}
+        </div>
+        <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-neutral-500">
+          <span>{roomName}</span>
+          <span className="text-neutral-300">·</span>
+          <span className="font-mono">{time}</span>
+        </div>
+        {assigneeName && (
+          <div className="mt-1 text-[11px] italic text-neutral-600">→ {assigneeName}</div>
+        )}
+      </div>
+    </button>
   );
 }
