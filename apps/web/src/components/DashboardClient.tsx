@@ -1,83 +1,205 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import {
-  DndContext,
-  type DragEndEvent,
-  PointerSensor,
-  useSensor,
-  useSensors,
-} from "@dnd-kit/core";
+import { useEffect } from "react";
+import { DndContext, DragEndEvent, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { House } from "@/components/house/House";
+import { PeopleList } from "@/components/sidebar/PeopleList";
+import { PersonFigure } from "@/components/sidebar/PersonFigure";
+import { CompleteDialog } from "@/components/task/CompleteDialog";
+import { ProfileHistoryDialog } from "@/components/profile/ProfileHistoryDialog";
+import { useAppStore, colorFromString } from "@/lib/store";
+import { supabase } from "@/lib/supabase-data";
+import type { TaskInstance } from "@/lib/types";
+import Link from "next/link";
 
-import type {
-  Profile,
-  Room,
-  TaskInstanceWithDetails,
-} from "@upkeep/shared";
-import { assignRoomTo } from "@/app/actions";
-import { PeopleList } from "./sidebar/PeopleList";
-import { TaskList } from "./sidebar/TaskList";
-import { House } from "./house/House";
+function useSupabaseSync() {
+  const loadFromSupabase = useAppStore((s) => s.loadFromSupabase);
+  const upsertInstanceFromRemote = useAppStore((s) => s.upsertInstanceFromRemote);
 
-type Props = {
-  rooms: Room[];
-  people: Profile[];
-  instances: TaskInstanceWithDetails[];
-};
+  useEffect(() => {
+    // Initial load.
+    void loadFromSupabase();
 
-// Top-level layout for the admin dashboard:
-//   [ People sidebar ] [ 3D house canvas ] [ Tasks sidebar ]
-//
-// Drag a person card from the left onto a room in the centre to assign
-// them every pending task in that room for today.
-export function DashboardClient({ rooms, people, instances }: Props) {
-  const [pending, startTransition] = useTransition();
-  // Tracks the most-recent drop so we can flash visual feedback.
-  const [lastDrop, setLastDrop] = useState<{
-    roomId: string;
-    userId: string;
-  } | null>(null);
+    // Subscribe to changes on task_instances — when the mobile app marks
+    // something complete, the 3D house turns green without a refresh.
+    const channel = supabase
+      .channel("task_instances_changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "task_instances" },
+        (payload) => {
+          if (payload.eventType === "DELETE") return;
+          const next = payload.new as TaskInstance;
+          upsertInstanceFromRemote(next);
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [loadFromSupabase, upsertInstanceFromRemote]);
+}
+
+function CoordReadout() {
+  const cursorPos = useAppStore((s) => s.cursorPos);
+  // Bottom-right of the 3D viewport, just left of the Admin link.
+  return (
+    <div className="pointer-events-none absolute bottom-5 right-44 rounded-md border border-neutral-200 bg-white/95 px-3 py-2 font-mono text-[11px] leading-tight text-neutral-700 shadow-sm backdrop-blur">
+      <div className="mb-0.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+        Cursor position
+      </div>
+      {cursorPos ? (
+        <>
+          X = {cursorPos[0].toFixed(2)} &nbsp; Z = {cursorPos[2].toFixed(2)}
+          <div className="text-[10px] text-neutral-400">
+            Y = {cursorPos[1].toFixed(2)}
+          </div>
+        </>
+      ) : (
+        <span className="text-neutral-400">hover the house…</span>
+      )}
+    </div>
+  );
+}
+
+export function DashboardClient() {
+  useSupabaseSync();
+  const profiles = useAppStore((s) => s.profiles);
+  const draggingProfileId = useAppStore((s) => s.draggingProfileId);
+  const setDraggingProfile = useAppStore((s) => s.setDraggingProfile);
+  const assignAllPendingInRoom = useAppStore((s) => s.assignAllPendingInRoom);
+  const assignTaskToProfile = useAppStore((s) => s.assignTaskToProfile);
+  const editMode = useAppStore((s) => s.editMode);
+  const toggleEditMode = useAppStore((s) => s.toggleEditMode);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      // Avoid hijacking simple clicks on draggable cards.
-      activationConstraint: { distance: 6 },
-    }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
 
-  function onDragEnd(event: DragEndEvent) {
-    const personId = String(event.active.id);
-    const roomId = event.over?.id ? String(event.over.id) : null;
-    if (!roomId) return;
+  const onDragEnd = (e: DragEndEvent) => {
+    const profileId = e.active.data.current?.profileId as string | undefined;
+    const { hoveredRoomId, hoveredInstanceId, instances } = useAppStore.getState();
+    setDraggingProfile(null);
 
-    setLastDrop({ roomId, userId: personId });
-    startTransition(async () => {
-      await assignRoomTo(roomId, personId);
-    });
-  }
+    if (!profileId) return;
 
-  // Group instances by room for the centre column status colouring and the
-  // right-hand task list.
-  const instancesByRoom = new Map<string | null, TaskInstanceWithDetails[]>();
-  for (const i of instances) {
-    const key = i.room_id ?? null;
-    const list = instancesByRoom.get(key) ?? [];
-    list.push(i);
-    instancesByRoom.set(key, list);
-  }
+    // Pin drop wins — only assign that one task. The dialog stays closed;
+    // the user clicks the pin themselves when they're ready to read.
+    if (hoveredInstanceId) {
+      const inst = instances.find((i) => i.id === hoveredInstanceId);
+      if (inst && inst.status === "pending") {
+        assignTaskToProfile(hoveredInstanceId, profileId);
+      }
+      return;
+    }
+
+    // Room drop — assign every pending task in that room.
+    if (hoveredRoomId) {
+      assignAllPendingInRoom(hoveredRoomId, profileId);
+    }
+  };
+
+  const activeProfile = profiles.find((p) => p.id === draggingProfileId);
 
   return (
-    <DndContext sensors={sensors} onDragEnd={onDragEnd}>
-      <div className="grid h-[calc(100vh-7rem)] grid-cols-[260px_1fr_320px] gap-4">
-        <PeopleList people={people} />
-        <House
-          rooms={rooms}
-          instancesByRoom={instancesByRoom}
-          highlightedRoomId={lastDrop?.roomId ?? null}
-          assigning={pending}
-        />
-        <TaskList instances={instances} />
+    <DndContext
+      id="dashboard-dnd"
+      sensors={sensors}
+      onDragStart={(e) => setDraggingProfile(e.active.data.current?.profileId ?? null)}
+      onDragEnd={onDragEnd}
+      onDragCancel={() => setDraggingProfile(null)}
+    >
+      <div className="flex h-screen w-screen overflow-hidden bg-stone-100 text-neutral-900">
+        {/* Main 3D viewport — left, full bleed */}
+        <main className="relative flex-1">
+          <House />
+
+          {/* Floating brand chip — top-left of the 3D view */}
+          <div className="pointer-events-none absolute left-5 top-5 rounded-md border border-neutral-200 bg-white/95 px-3.5 py-2 shadow-sm backdrop-blur">
+            <div className="text-[9px] font-semibold uppercase tracking-[0.22em] text-neutral-400">
+              Telos · House
+            </div>
+            <div className="font-serif text-base font-semibold leading-tight">
+              The Natural Order
+            </div>
+          </div>
+
+          {/* Help hint */}
+          <div className="pointer-events-none absolute bottom-5 left-5 max-w-xs rounded-md border border-neutral-200 bg-white/95 px-3.5 py-2.5 text-xs leading-relaxed text-neutral-700 shadow-sm backdrop-blur">
+            <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-400">
+              How to use
+            </div>
+            Drop a resident on a <span className="font-medium text-neutral-900">room</span> to make them
+            responsible for every pending task in it, or on a single <span className="font-medium text-neutral-900">pin</span> to
+            assign just that one. Click a pin to read instructions and tick off subtasks. Click a resident's card to see their history.
+          </div>
+
+          {/* Edit-mode toggle — top-right of the 3D viewport. Click to enter
+              edit mode, then click on the house to drop a room label. */}
+          <button
+            onClick={toggleEditMode}
+            className={`absolute right-5 top-5 rounded-md px-3.5 py-2 text-[10px] font-bold uppercase tracking-[0.18em] shadow-sm backdrop-blur transition ${
+              editMode
+                ? "bg-[var(--mint)] text-[var(--phthalo)] hover:brightness-95"
+                : "border border-neutral-200 bg-white/95 text-neutral-700 hover:bg-white"
+            }`}
+          >
+            {editMode ? "Done" : "Edit"}
+          </button>
+
+          {editMode && (
+            <div className="pointer-events-none absolute right-5 top-16 max-w-xs rounded-md border border-neutral-200 bg-white/95 px-3.5 py-2 text-[11px] leading-relaxed text-neutral-700 shadow-sm backdrop-blur">
+              Click any room label to rename it. Press Enter or Esc to commit.
+            </div>
+          )}
+
+          {/* Live cursor coords — hover the house, read the numbers off
+              the bottom-left chip, tell me which positions to use when
+              reshaping rooms. */}
+          <CoordReadout />
+
+          {draggingProfileId && (
+            <div className="pointer-events-none absolute right-5 bottom-16 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white shadow-lg">
+              Drop on a room (whole room) or a pin (one task)
+            </div>
+          )}
+
+          {/* Admin link — bottom-right corner of the 3D view */}
+          <Link
+            href="/admin"
+            className="absolute bottom-5 right-5 rounded-md border border-neutral-200 bg-white/95 px-3 py-1.5 text-xs font-medium text-neutral-700 shadow-sm backdrop-blur transition hover:bg-white hover:text-neutral-900"
+          >
+            Admin tracking →
+          </Link>
+        </main>
+
+        {/* Right sidebar — people. Dark surface to match the friend's 3D
+            model UI (glassmorphism cards over an obsidian backdrop). */}
+        <aside className="flex w-64 flex-col border-l border-white/10 bg-[var(--obsidian)]">
+          <PeopleList />
+        </aside>
       </div>
+
+      <DragOverlay dropAnimation={null}>
+        {activeProfile && (
+          <div
+            className="glassmorphism flex items-center gap-2.5 rounded-lg px-3 py-2 text-[var(--parchment-silver)] shadow-2xl ring-1 ring-[var(--mint)]/60"
+            style={{ width: 240 }}
+          >
+            <PersonFigure color={colorFromString(activeProfile.id)} size={32} />
+            <div>
+              <div className="text-sm font-semibold leading-tight text-white">{activeProfile.full_name}</div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-[var(--mint)]">
+                Assigning…
+              </div>
+            </div>
+          </div>
+        )}
+      </DragOverlay>
+
+      <CompleteDialog />
+      <ProfileHistoryDialog />
     </DndContext>
   );
 }

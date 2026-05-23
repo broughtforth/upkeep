@@ -5,89 +5,88 @@
 // between Next.js SSR and React Native), but the row types live here so
 // the two clients agree on shape.
 
-export type Role = 'admin' | 'cleaner';
-
-export type TaskStatus = 'pending' | 'in_progress' | 'complete';
-
-// Categories map to the top-level chores you'd see in the cleaning app:
-// kitchen, bathroom, restock, bins, beds, robovac, surfaces, organising.
-export type TaskCategory =
-  | 'kitchen'
+export type RoomType =
   | 'bathroom'
-  | 'restock'
-  | 'bins'
-  | 'beds'
-  | 'robovac'
-  | 'surfaces'
-  | 'organising';
+  | 'kitchen'
+  | 'tech'
+  | 'living'
+  | 'bedroom'
+  | 'corridor';
 
-export type Profile = {
+export type TaskCategory = 'cleaning' | 'supplies' | 'cooking' | 'laundry';
+
+export type TaskStatus = 'pending' | 'queued' | 'assigned' | 'completed';
+
+export type Role = 'resident' | 'admin';
+
+export interface Profile {
   id: string; // matches auth.users.id
-  email: string;
-  full_name: string | null;
+  full_name: string;
+  avatar_url: string | null;
   role: Role;
-  // Hex color for avatar background — admin can set or auto-assign.
-  color: string | null;
-  created_at: string;
-};
+  // Expo push token, set per-device by the mobile app so the web app can
+  // notify a resident when they're assigned a task.
+  expo_push_token?: string | null;
+  created_at?: string;
+}
 
-export type Room = {
+export interface Room {
   id: string;
   name: string;
-  // Optional grouping for the 3D model / sidebar.
-  floor: number | null;
-  created_at: string;
-};
+  type: RoomType;
+  position_x: number;
+  position_z: number;
+  width: number;
+  depth: number;
+  height: number;
+  color: string;
+}
 
-// A reusable definition of a task. Materialised into task_instances
-// daily by a scheduled job (or manually for now).
-export type TaskTemplate = {
+export interface TaskTemplate {
   id: string;
-  title: string;
-  description: string | null;
+  room_id: string;
+  name: string;
   category: TaskCategory;
-  // Which room this template applies to. NULL = whole-house (e.g. Robovac).
-  room_id: string | null;
-  // Default estimated duration in minutes.
-  estimated_minutes: number;
-  // Whether new instances should be auto-created daily.
-  active: boolean;
-  created_at: string;
-};
+  duration_min: number;
+  schedule_time: string;
+  // The "why" + house rules — what residents read before they start.
+  instructions: string;
+  // The step-by-step checklist they tick off one at a time.
+  subtasks: string[];
+  // Where in the room the task pin sits (relative to room centre).
+  // x / z in metres; y is the height above the floor.
+  pin: { x: number; y: number; z: number };
+}
 
-// A concrete task for a specific day, optionally assigned to someone.
-export type TaskInstance = {
+export interface TaskInstance {
   id: string;
   template_id: string;
-  room_id: string | null;
-  // Profile.id of the assigned cleaner. NULL = unassigned.
-  assigned_to: string | null;
-  status: TaskStatus;
-  // ISO timestamp the cleaner started; updated when status -> in_progress.
-  started_at: string | null;
-  // ISO timestamp the cleaner completed; updated when status -> complete.
-  completed_at: string | null;
-  // Optional photo proof uploaded to the `task-photos` Supabase bucket.
-  photo_url: string | null;
-  // The date this instance is for (YYYY-MM-DD in the property's timezone).
+  room_id: string;
   scheduled_for: string;
-  created_at: string;
-};
+  status: TaskStatus;
+  assignee_id: string | null;
+  assigned_at: string | null;
+  completed_at: string | null;
+  photo_url: string | null;
+  // Which subtasks have been ticked (by their label).
+  subtasks_done: string[];
+}
 
 // Useful joined shapes consumed by both apps' lists.
-export type TaskInstanceWithDetails = TaskInstance & {
+export interface TaskInstanceWithDetails extends TaskInstance {
   template: TaskTemplate;
-  room: Room | null;
+  room: Room;
   assignee: Profile | null;
-};
+}
 
 // ---------- Env / config helpers ----------
 
 // Centralized env var names so both apps spell them the same way.
 export const ENV_KEYS = {
+  // Web (Next.js) reads NEXT_PUBLIC_* on the client side.
   supabaseUrl: 'NEXT_PUBLIC_SUPABASE_URL',
   supabaseAnonKey: 'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-  // Mobile-only: Expo exposes env vars via EXPO_PUBLIC_*.
+  // Mobile (Expo) reads EXPO_PUBLIC_* baked at build time.
   expoSupabaseUrl: 'EXPO_PUBLIC_SUPABASE_URL',
   expoSupabaseAnonKey: 'EXPO_PUBLIC_SUPABASE_ANON_KEY',
 } as const;

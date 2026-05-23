@@ -1,250 +1,183 @@
--- Upkeep initial schema.
---
--- Apply by copy-pasting into Supabase SQL Editor (Dashboard → SQL).
--- Safe to re-run: all CREATE statements use IF NOT EXISTS where possible.
---
--- What you get:
---   * profiles  — one row per auth.users, holds role (admin/cleaner) + display info
---   * rooms     — physical rooms in the house
---   * task_templates  — reusable task definitions (per-room or whole-house)
---   * task_instances  — concrete tasks for a given day, with assignment + status
---   * RLS policies: admins can do everything; cleaners can read everything and
---     mutate only their own task_instances.
---   * Trigger: auto-creates a profile row when a new auth user signs up.
---   * Seed rows for the 7 chore categories as task_templates with no room_id.
---   * A storage bucket `task-photos` for completion proof uploads.
+-- House task management — initial schema
+-- Run this in the Supabase SQL editor, or via `supabase db push` if using the CLI.
 
-----------------------------------------------------------------
--- 1. Schema
-----------------------------------------------------------------
-
--- Profiles. One row per auth user.
-create table if not exists public.profiles (
-  id          uuid primary key references auth.users(id) on delete cascade,
-  email       text not null,
-  full_name   text,
-  role        text not null default 'cleaner' check (role in ('admin','cleaner')),
-  color       text,
-  created_at  timestamptz not null default now()
+-- =========================================================================
+-- profiles: one row per person (mirrored from auth.users via trigger below)
+-- =========================================================================
+create table public.profiles (
+  id           uuid primary key references auth.users(id) on delete cascade,
+  full_name    text not null,
+  avatar_url   text,
+  role         text not null default 'resident' check (role in ('resident', 'admin')),
+  created_at   timestamptz not null default now()
 );
 
--- Rooms.
-create table if not exists public.rooms (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null unique,
-  floor       smallint,
-  created_at  timestamptz not null default now()
+-- =========================================================================
+-- rooms: the spatial layout of the house. position/size in metres.
+-- =========================================================================
+create table public.rooms (
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null,
+  type         text not null check (type in ('bathroom','kitchen','tech','living','bedroom','corridor')),
+  position_x   real not null,
+  position_z   real not null,
+  width        real not null,
+  depth        real not null,
+  height       real not null default 1.4,
+  color        text not null default '#cbd5e1'
 );
 
--- Task templates.
-create table if not exists public.task_templates (
-  id                 uuid primary key default gen_random_uuid(),
-  title              text not null,
-  description        text,
-  category           text not null check (category in
-                       ('kitchen','bathroom','restock','bins','beds','robovac','surfaces','organising')),
-  room_id            uuid references public.rooms(id) on delete set null,
-  estimated_minutes  integer not null default 15,
-  active             boolean not null default true,
-  created_at         timestamptz not null default now()
+-- =========================================================================
+-- task_templates: recurring task definitions (e.g. "Clean Bathroom 1 @ 09:00")
+-- =========================================================================
+create table public.task_templates (
+  id            uuid primary key default gen_random_uuid(),
+  room_id       uuid not null references public.rooms(id) on delete cascade,
+  name          text not null,
+  category      text not null check (category in ('cleaning','supplies','cooking','laundry')),
+  duration_min  int  not null,
+  -- schedule_time: time-of-day this task should be generated. Combine with
+  -- a daily cron Edge Function to materialise task_instances for the day.
+  schedule_time time not null,
+  active        boolean not null default true,
+  -- Read-before-you-start context (compendium rules, "why" of the task).
+  instructions  text not null default '',
+  -- Step-by-step checklist; each entry is a subtask label.
+  subtasks      text[] not null default '{}',
+  -- Where to place the task pin in 3D (relative to its room's centre).
+  pin_x         real not null default 0,
+  pin_y         real not null default 0.9,
+  pin_z         real not null default 0
 );
 
--- Task instances. One row per (template, day).
-create table if not exists public.task_instances (
+-- =========================================================================
+-- task_instances: a specific occurrence of a task on a specific day.
+-- Drives the red / orange / green visual state in the 3D house.
+-- =========================================================================
+create table public.task_instances (
   id              uuid primary key default gen_random_uuid(),
   template_id     uuid not null references public.task_templates(id) on delete cascade,
-  room_id         uuid references public.rooms(id) on delete set null,
-  assigned_to     uuid references public.profiles(id) on delete set null,
-  status          text not null default 'pending' check (status in ('pending','in_progress','complete')),
-  started_at      timestamptz,
+  room_id         uuid not null references public.rooms(id) on delete cascade,
+  scheduled_for   timestamptz not null,
+  status          text not null default 'pending'
+                  check (status in ('pending','assigned','completed')),
+  assignee_id     uuid references public.profiles(id) on delete set null,
+  assigned_at     timestamptz,
   completed_at    timestamptz,
   photo_url       text,
-  scheduled_for   date not null default current_date,
-  created_at      timestamptz not null default now(),
-  unique (template_id, scheduled_for)
+  -- Subtask labels that have been ticked off (subset of the template's subtasks).
+  subtasks_done   text[] not null default '{}'
 );
 
-create index if not exists idx_task_instances_scheduled_for
-  on public.task_instances (scheduled_for);
-create index if not exists idx_task_instances_assigned_to
-  on public.task_instances (assigned_to);
-create index if not exists idx_task_instances_status
-  on public.task_instances (status);
+create index task_instances_room_idx     on public.task_instances(room_id);
+create index task_instances_assignee_idx on public.task_instances(assignee_id);
+create index task_instances_status_idx   on public.task_instances(status);
 
-----------------------------------------------------------------
--- 2. Profile auto-create trigger
-----------------------------------------------------------------
--- Whenever a new row appears in auth.users, mirror it into profiles.
-
+-- =========================================================================
+-- Trigger: auto-create a profile row whenever a new auth user signs up
+-- =========================================================================
 create or replace function public.handle_new_user()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
+returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  insert into public.profiles (id, email, full_name)
-  values (
-    new.id,
-    new.email,
-    coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1))
-  )
-  on conflict (id) do nothing;
+  insert into public.profiles (id, full_name)
+  values (new.id, coalesce(new.raw_user_meta_data->>'full_name', new.email));
   return new;
 end;
 $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
+after insert on auth.users
+for each row execute function public.handle_new_user();
 
-----------------------------------------------------------------
--- 3. Row-Level Security
-----------------------------------------------------------------
-
+-- =========================================================================
+-- RLS — enable on every table
+-- =========================================================================
 alter table public.profiles       enable row level security;
 alter table public.rooms          enable row level security;
 alter table public.task_templates enable row level security;
 alter table public.task_instances enable row level security;
 
--- Helper: is the calling user an admin?
-create or replace function public.is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.profiles
-    where id = auth.uid() and role = 'admin'
+-- Profiles: anyone signed in can read; users can update their own row;
+-- admins can update anyone.
+create policy "profiles readable by authenticated"
+  on public.profiles for select to authenticated using (true);
+
+create policy "profiles updatable by self"
+  on public.profiles for update to authenticated
+  using (auth.uid() = id);
+
+-- Rooms: read by everyone signed in, admin-only writes.
+create policy "rooms readable by authenticated"
+  on public.rooms for select to authenticated using (true);
+
+create policy "rooms writable by admin"
+  on public.rooms for all to authenticated
+  using (exists (select 1 from public.profiles p
+                 where p.id = auth.uid() and p.role = 'admin'))
+  with check (exists (select 1 from public.profiles p
+                      where p.id = auth.uid() and p.role = 'admin'));
+
+-- Task templates: read by all, write by admin.
+create policy "task_templates readable by authenticated"
+  on public.task_templates for select to authenticated using (true);
+
+create policy "task_templates writable by admin"
+  on public.task_templates for all to authenticated
+  using (exists (select 1 from public.profiles p
+                 where p.id = auth.uid() and p.role = 'admin'))
+  with check (exists (select 1 from public.profiles p
+                      where p.id = auth.uid() and p.role = 'admin'));
+
+-- Task instances:
+-- - everyone can read
+-- - anyone can claim (assign themselves) when pending
+-- - assignee or admin can update / complete
+create policy "task_instances readable by authenticated"
+  on public.task_instances for select to authenticated using (true);
+
+create policy "task_instances claim or complete"
+  on public.task_instances for update to authenticated
+  using (
+    assignee_id = auth.uid()
+    or assignee_id is null
+    or exists (select 1 from public.profiles p
+               where p.id = auth.uid() and p.role = 'admin')
   );
-$$;
 
--- Profiles policies.
-drop policy if exists "profiles_select_all"       on public.profiles;
-drop policy if exists "profiles_update_own"       on public.profiles;
-drop policy if exists "profiles_admin_all"        on public.profiles;
-create policy "profiles_select_all" on public.profiles
-  for select using (auth.role() = 'authenticated');
-create policy "profiles_update_own" on public.profiles
-  for update using (id = auth.uid());
-create policy "profiles_admin_all"  on public.profiles
-  for all using (public.is_admin()) with check (public.is_admin());
+create policy "task_instances admin insert/delete"
+  on public.task_instances for insert to authenticated
+  with check (exists (select 1 from public.profiles p
+                      where p.id = auth.uid() and p.role = 'admin'));
 
--- Rooms policies (everyone reads; admins write).
-drop policy if exists "rooms_select_all"  on public.rooms;
-drop policy if exists "rooms_admin_all"   on public.rooms;
-create policy "rooms_select_all" on public.rooms
-  for select using (auth.role() = 'authenticated');
-create policy "rooms_admin_all"  on public.rooms
-  for all using (public.is_admin()) with check (public.is_admin());
-
--- Task templates policies (everyone reads; admins write).
-drop policy if exists "templates_select_all" on public.task_templates;
-drop policy if exists "templates_admin_all"  on public.task_templates;
-create policy "templates_select_all" on public.task_templates
-  for select using (auth.role() = 'authenticated');
-create policy "templates_admin_all"  on public.task_templates
-  for all using (public.is_admin()) with check (public.is_admin());
-
--- Task instance policies.
--- * Anyone authenticated can read all instances (so cleaners see whose what).
--- * Admins can do anything.
--- * Cleaners can update an instance only if it's assigned to them (start/complete).
-drop policy if exists "instances_select_all"    on public.task_instances;
-drop policy if exists "instances_admin_all"     on public.task_instances;
-drop policy if exists "instances_update_mine"   on public.task_instances;
-create policy "instances_select_all" on public.task_instances
-  for select using (auth.role() = 'authenticated');
-create policy "instances_admin_all"  on public.task_instances
-  for all using (public.is_admin()) with check (public.is_admin());
-create policy "instances_update_mine" on public.task_instances
-  for update using (assigned_to = auth.uid())
-  with check (assigned_to = auth.uid());
-
-----------------------------------------------------------------
--- 4. Seed rooms
-----------------------------------------------------------------
--- These match the names that were hardcoded in the mobile app's data.ts.
-
-insert into public.rooms (name, floor) values
-  ('Kitchen',              0),
-  ('the Symposium',        0),
-  ('the Atrium',           0),
-  ('the Forge',            0),
-  ('the Zen Room',         1),
-  ('the Tech Room',        1),
-  ('the Media Room',       0),
-  ('Main Bathroom',        1),
-  ('Walk-in Bathroom',     1),
-  ('Media Room Bathroom',  0)
-on conflict (name) do nothing;
-
-----------------------------------------------------------------
--- 5. Seed task templates
-----------------------------------------------------------------
--- The 8 task categories from the new chore list, set up as templates.
--- Whole-house tasks (no room_id) and bathroom-specific tasks (one per
--- bathroom) so admins have realistic things to assign on day 1.
-
--- Kitchen
-insert into public.task_templates (title, description, category, room_id, estimated_minutes)
-select
-  'Kitchen',
-  'Put away dishes · Wipe counters, stovetop, sink · Sweep floor · Wipe spills on appliances and cabinets · Put away leftovers · Check fridge for expired food · Place eggs in the egg holder',
-  'kitchen',
-  r.id,
-  30
-from public.rooms r where r.name = 'Kitchen'
-on conflict do nothing;
-
--- Per-bathroom
-insert into public.task_templates (title, description, category, room_id, estimated_minutes)
-select
-  'Clean ' || r.name,
-  'Scrub toilet bowl · Wipe mirror · Clean sink · Clean shower floor or tub · Clean shower drain · Wipe remaining surfaces · Empty bins',
-  'bathroom',
-  r.id,
-  25
-from public.rooms r where r.name ilike '%Bathroom%'
-on conflict do nothing;
-
--- Whole-house chores (room_id stays null).
-insert into public.task_templates (title, description, category, estimated_minutes) values
-  ('Restock supplies',
-   'Toilet papers · Toothpaste · Shampoo · Conditioner · Liquid dish soap · Liquid hand soap · Dishwasher pods · Bin liners',
-   'restock', 20),
-  ('Throw out bins',
-   'Gather all the bins and throw them out · Place new bin liners · Wash bins if needed',
-   'bins', 15),
-  ('Make the beds',
-   'Make beds in all rooms with beds · Change sheets bi-weekly · Organise sofa · Put away sleeping bags',
-   'beds', 20),
-  ('Robovac',
-   'De-clutter floor space · Empty dirty water container · Fill clean water container · Clean brush · Clean roller · Check floor map is correct',
-   'robovac', 15),
-  ('Wipe surfaces',
-   'Counter tops · Bookshelves · Tables · Doors · Handles · Switches · Desks',
-   'surfaces', 20),
-  ('Organising / Tidying',
-   'Papers · Pens · Books · Bags · Wires and chargers · Toiletries in bathrooms · Shoes and coats · Litter · Cups, glasses, plates',
-   'organising', 25)
-on conflict do nothing;
-
-----------------------------------------------------------------
--- 6. Storage bucket for completion photos
-----------------------------------------------------------------
-
+-- =========================================================================
+-- Storage bucket for completion photos
+-- (Run this section in the Supabase SQL editor — it relies on the
+-- storage schema being present.)
+-- =========================================================================
 insert into storage.buckets (id, name, public)
 values ('task-photos', 'task-photos', true)
 on conflict (id) do nothing;
 
--- Anyone authenticated can upload; anyone can read.
-drop policy if exists "task-photos read"   on storage.objects;
-drop policy if exists "task-photos upload" on storage.objects;
-create policy "task-photos read" on storage.objects
-  for select using (bucket_id = 'task-photos');
-create policy "task-photos upload" on storage.objects
-  for insert with check (bucket_id = 'task-photos' and auth.role() = 'authenticated');
+create policy "task-photos readable by all"
+  on storage.objects for select using (bucket_id = 'task-photos');
+
+create policy "task-photos uploadable by owner"
+  on storage.objects for insert to authenticated
+  with check (bucket_id = 'task-photos' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- =========================================================================
+-- Seed data — 7 rooms matching the procedural 3D house
+-- =========================================================================
+-- Grid layout: 16m × 10m footprint, rooms share walls.
+--   Top row    (z=-5..-1, depth 4):  Tech A | Kitchen | Tech B
+--   Bottom row (z=-1.. 5, depth 6):  Bath1 | Living | Bedroom | Bath2
+-- Layout: top row | corridor | bottom row, total 16w × 10.5d.
+insert into public.rooms (name, type, position_x, position_z, width, depth, color) values
+  ('The Forge',     'tech',     -5.5, -3,     5,  4,   '#fafafa'),
+  ('The Kitchen',   'kitchen',   0,   -3,     6,  4,   '#fafafa'),
+  ('The Tech Room', 'tech',      5.5, -3,     5,  4,   '#fafafa'),
+  ('Corridor',      'corridor',  0,   -0.25, 16,  1.5, '#efe7d4'),
+  ('Bathroom I',    'bathroom', -6.5,  3,     3,  5,   '#fafafa'),
+  ('Media Room',    'living',   -2,    3,     6,  5,   '#fafafa'),
+  ('Zen Room',      'bedroom',   3,    3,     4,  5,   '#fafafa'),
+  ('Bathroom II',   'bathroom',  6.5,  3,     3,  5,   '#fafafa');
