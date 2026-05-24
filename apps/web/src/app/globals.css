@@ -1,42 +1,131 @@
 @import "tailwindcss";
 
+/*
+ * Upkeep web design system. Mirrors apps/mobile/src/theme.ts so the two apps
+ * read as one product.
+ *
+ * — Colours: blue primary, cream background, soft greys, sage for completed.
+ * — Type:   Space Grotesk (400/500/600/700).
+ * — Cards:  blocky 3px black border + white surface, large radius (the
+ *           mobile RoomTile look — used for resident cards and room nodes).
+ *
+ * The old Telos palette (obsidian / phthalo / mint / glassmorphism) lives in
+ * .glassmorphism as a legacy class so any third-party drei/three overlays
+ * that still reach for it don't crash, but new surfaces should use the
+ * blocky-card / soft-card / btn-pill-* utilities below.
+ */
+
 :root {
-  --obsidian: #000000;
-  --phthalo: #123524;
-  --stark-white: #ffffff;
-  --parchment-mist: #f6faf6;
-  --parchment-silver: #e2e2e2;
-  --parchment-variant: #c1c8c1;
-  --mint: #a9cfb7;
+  /* Brand */
+  --primary: #0F7AEF;
+  --primary-strong: #0A5BB8; /* Deeper blue for wordmarks/large display use — same hue, much higher contrast against cream */
+  --primary-container: #E3EEFB;
+  --foreground: #0D0C14;
+  --foreground-soft: #3A3946;
+  --muted: #6E6C77;
+  --muted-soft: #DADADA;
+  --background: #FAF9F8;
+  --surface: #FFFFFF;
+  --line: #E5E4E2;
+  --danger: #D9534F;
+  --accent: #0D0C14;
+
+  /* Status */
+  --pending: #ef4444;
+  --assigned: #f97316;
+  --complete-bg: #E8F5EC;
+  --complete-fg: #1F8F4E;
+
+  /* Radii — match mobile borderRadius scale */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Legacy aliases — referenced by friend's House.tsx HUD chips. */
+  --mint: var(--primary);
+  --phthalo: var(--foreground);
+  --obsidian: var(--background);
+  --parchment-silver: var(--foreground-soft);
 }
 
 @theme inline {
-  --color-background: var(--obsidian);
-  --color-foreground: var(--parchment-silver);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-space-grotesk);
 }
 
-@layer components {
-  .glassmorphism {
-    background: rgba(255, 255, 255, 0.05);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 10px;
-  }
-}
-
+/* Body font. !important so Tailwind preflight's `font-family: ...` reset
+   doesn't quietly win over us. */
 body {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-space-grotesk), system-ui, sans-serif !important;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Plain class definitions (not in @layer) — Tailwind v4 handles these as
+   regular CSS without needing @reference. Putting them in @layer components
+   silently dropped them from the compiled bundle in our setup. */
+
+.blocky-card {
+  background: var(--surface);
+  border: 3px solid var(--foreground);
+  border-radius: var(--radius-xl);
+}
+
+.soft-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.06),
+    0 3px 10px rgba(0, 0, 0, 0.04);
+}
+
+.btn-pill-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 2px solid var(--primary);
+  color: var(--primary);
+  border-radius: 999px;
+  padding: 11px 22px;
+  font-weight: 700;
+  font-size: 15px;
+  line-height: 1;
+  transition: opacity 120ms ease;
+}
+.btn-pill-primary:hover { opacity: 0.85; }
+
+.btn-pill-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 2px solid var(--foreground);
+  color: var(--foreground);
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1;
+  transition: background 120ms ease;
+}
+.btn-pill-ghost:hover { background: var(--background); }
+
+/* Legacy class — old dark-glass look reframed as a light bordered chip so
+   anything still referencing it blends into the new theme. */
+.glassmorphism {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--muted-soft);
+  border-radius: 10px;
 }

@@ -107,3 +107,31 @@ export async function updateInstancesBulk(
 ): Promise<void> {
   await Promise.all(patches.map(({ id, patch }) => updateInstance(id, patch)));
 }
+
+// Insert a brand-new resident. Supabase generates the UUID via the column's
+// default; we get the row back so the caller can drop it into local state
+// without waiting for Realtime to round-trip. role defaults to 'resident'.
+export async function insertProfile(name: string): Promise<Profile> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .insert({ full_name: name, role: "resident" })
+    .select("*")
+    .single();
+  if (error) {
+    // Pull out the fields explicitly — Supabase errors serialise as `{}`
+    // through the default console formatter, which hides the real cause.
+    console.error(
+      "[supabase] insertProfile failed:",
+      error.message || error,
+      "(code:",
+      error.code,
+      "details:",
+      error.details,
+      "hint:",
+      error.hint,
+      ")",
+    );
+    throw new Error(error.message || "Failed to add resident");
+  }
+  return data as Profile;
+}

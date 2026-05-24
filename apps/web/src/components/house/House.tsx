@@ -325,6 +325,11 @@ function RoomLabelMarker({ label }: { label: RoomLabel }) {
   const zoomToRoom = useAppStore((s) => s.zoomToRoom);
   const zoomedRoomId = useAppStore((s) => s.zoomedRoomId);
 
+  // When this room is the one zoomed into, the RoomNode card already shows
+  // the room's name big. Hide the small label so the two don't stack on
+  // top of each other.
+  if (zoomedRoomId === label.id && !editMode) return null;
+
   return (
     <Html position={label.position} center zIndexRange={[40, 0]}>
       {editMode ? (
@@ -339,7 +344,7 @@ function RoomLabelMarker({ label }: { label: RoomLabel }) {
               (e.target as HTMLInputElement).blur();
             }
           }}
-          className="glassmorphism w-16 rounded px-1 py-0 text-center text-[7px] font-medium uppercase tracking-[0.12em] text-white shadow outline-none ring-1 ring-[var(--mint)]/60 placeholder:text-white/40"
+          className="w-24 rounded-md border-2 border-[var(--foreground)] bg-[var(--surface)] px-1.5 py-1 text-center text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--foreground)] shadow-sm outline-none focus:border-[var(--primary)] placeholder:text-[var(--muted)]"
           placeholder="Room name"
         />
       ) : (
@@ -353,7 +358,7 @@ function RoomLabelMarker({ label }: { label: RoomLabel }) {
             e.stopPropagation();
             zoomToRoom(zoomedRoomId === label.id ? null : label.id);
           }}
-          className="glassmorphism cursor-pointer select-none whitespace-nowrap rounded px-1 py-0 text-center text-[7px] font-medium uppercase tracking-[0.12em] text-white shadow transition hover:bg-white/15"
+          className="cursor-pointer select-none whitespace-nowrap rounded-md border-2 border-[var(--foreground)] bg-[var(--surface)] px-2 py-1 text-center text-[11px] font-bold uppercase tracking-[0.1em] text-[var(--foreground)] shadow-sm transition hover:border-[var(--primary)] hover:bg-[var(--primary-container)] hover:text-[var(--primary)]"
         >
           {label.name}
         </button>
@@ -380,7 +385,7 @@ export function House() {
       shadows
       className="!h-full !w-full"
       gl={{ antialias: true }}
-      style={{ background: "#f1f5f9" }}
+      style={{ background: "#FAF9F8" }}
       // Click on empty space outside any room fires this — flies the camera
       // back to the default framing.
       onPointerMissed={() => zoomToRoom(null)}

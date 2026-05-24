@@ -1,6 +1,10 @@
 # Workspaces install their own deps but npm hoists to the root.
 node_modules/
 
+# Build outputs
+.next/
+.expo/
+
 # macOS
 .DS_Store
 

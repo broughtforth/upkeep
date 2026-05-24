@@ -83,20 +83,20 @@ export function CompleteDialog() {
       onClick={close}
     >
       <div
-        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        className="flex max-h-[90vh] w-full max-w-lg flex-col overflow-hidden rounded-[24px] border-[3px] border-[var(--foreground)] bg-[var(--surface)] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex-shrink-0 border-b border-neutral-200 bg-neutral-50 px-5 py-4">
+        <div className="flex-shrink-0 border-b border-[var(--line)] bg-[var(--background)] px-5 py-4">
           <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md bg-white font-serif text-xl text-neutral-800 ring-1 ring-neutral-200">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--surface)] text-xl text-[var(--foreground)]">
               {symbol}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
+              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
                 {room?.name}
               </div>
-              <h3 className="mt-0.5 font-serif text-lg font-semibold leading-tight">
+              <h3 className="mt-0.5 text-xl font-bold leading-tight tracking-tight text-[var(--foreground)]">
                 {template?.name}
               </h3>
               <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-neutral-500">
@@ -322,10 +322,10 @@ export function CompleteDialog() {
         </div>
 
         {/* Footer */}
-        <div className="flex flex-shrink-0 items-center justify-between gap-2 border-t border-neutral-200 bg-neutral-50 px-5 py-3">
+        <div className="flex flex-shrink-0 items-center justify-between gap-2 border-t border-[var(--line)] bg-[var(--background)] px-5 py-3">
           <button
             onClick={close}
-            className="rounded-md px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+            className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--foreground-soft)] hover:bg-[var(--surface)]"
           >
             Close
           </button>
@@ -333,14 +333,14 @@ export function CompleteDialog() {
             <div className="flex gap-2">
               <button
                 onClick={() => { unassignTask(instance.id); close(); }}
-                className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+                className="btn-pill-ghost"
               >
                 Unassign
               </button>
               <button
                 onClick={onComplete}
                 disabled={uploading}
-                className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                className="btn-pill-primary disabled:opacity-50"
               >
                 {mode === "overview" ? "Mark task complete" : allDone ? "Done — finish task" : "Finish anyway"}
               </button>
@@ -349,7 +349,7 @@ export function CompleteDialog() {
           {instance.status === "queued" && (
             <button
               onClick={() => { unassignTask(instance.id); close(); }}
-              className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-100"
+              className="btn-pill-ghost"
             >
               Remove from queue
             </button>
