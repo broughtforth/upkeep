@@ -49,41 +49,47 @@ export function PersonCard({
       {...listeners}
       {...attributes}
       onClick={onClick}
-      className={`glassmorphism group relative flex cursor-grab items-center gap-3 rounded-lg px-3 py-2.5 text-[var(--parchment-silver)] transition active:cursor-grabbing ${
+      className={`blocky-card group relative flex cursor-grab items-center gap-3 px-3 py-3 transition active:cursor-grabbing ${
         isDragging || isSelf
           ? "opacity-30"
-          : "hover:-translate-y-px hover:bg-white/10 hover:border-white/20"
+          : "hover:-translate-y-0.5 hover:shadow-md"
       }`}
     >
       <PersonFigure color={color} size={38} />
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="truncate text-sm font-semibold leading-tight text-white">
+          <span className="truncate text-base font-bold leading-tight text-[var(--foreground)]">
             {profile.full_name}
           </span>
           {profile.role === "admin" && (
-            <span className="rounded bg-[var(--mint)]/15 px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--mint)]">
+            <span className="rounded-md bg-[var(--primary-container)] px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--primary)]">
               Admin
             </span>
           )}
         </div>
-        <div className="mt-1 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.14em] text-white/60">
+        <div className="mt-1.5 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-[var(--foreground-soft)]">
           <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              busy ? "bg-[var(--mint)]" : "border border-white/40"
+            className={`h-2 w-2 rounded-full ${
+              busy
+                ? "bg-[var(--primary)]"
+                : "border-2 border-[var(--muted)]"
             }`}
           />
           <span>{busy ? `${activeCount} active` : "Free"}</span>
           {queuedCount > 0 && (
-            <span className="text-white/45">· {queuedCount} queued</span>
+            <span className="text-[var(--muted)]">
+              · {queuedCount} queued
+            </span>
           )}
           {completedCount > 0 && (
-            <span className="text-white/30">· {completedCount} done</span>
+            <span className="text-[var(--complete-fg)]">
+              · {completedCount} done
+            </span>
           )}
         </div>
         {currentTaskName && (
-          <div className="mt-1 truncate text-[11px] italic text-white/55">
+          <div className="mt-1.5 truncate text-[13px] font-medium italic text-[var(--foreground-soft)]">
             → {currentTaskName}
           </div>
         )}

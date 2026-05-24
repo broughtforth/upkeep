@@ -3,26 +3,38 @@
 import { Html } from "@react-three/drei";
 import { useAppStore, colorFromString, type RoomLabel } from "@/lib/store";
 import { useCountdown } from "@/lib/countdown";
-import type { TaskInstance, TaskTemplate, Profile } from "@/lib/types";
+import type { TaskInstance, TaskTemplate, Profile, RoomType } from "@/lib/types";
 
-// One interactive node per room, sitting at the room's centroid. Shows the
-// task title, total estimated time (sum of every task's duration_min in that
-// room — currently one per room but the sum is future-proof), checklist
-// progress, and who's working on it. Click → opens CompleteDialog.
+// One interactive card shown only for the room currently zoomed into.
+// Structure mirrors the sidebar resident card exactly:
+//
+//   [ figure 38px ]  [ Name           STATE PILL ]
+//                    [ status line + meta        ]
+//                    [ secondary line            ]
+//
+// so a clicked room reads as part of the same visual family as the people.
 
 export function RoomNodes() {
   const roomLabels = useAppStore((s) => s.roomLabels);
   const selectedInstanceId = useAppStore((s) => s.selectedInstanceId);
+  const zoomedRoomId = useAppStore((s) => s.zoomedRoomId);
 
   // Hide nodes while the dialog is open so the modal isn't fighting them
   // for z-index. Mirrors the pattern used by the old TaskPins.
   if (selectedInstanceId) return null;
 
+  // Only show the full card for the room currently zoomed into. Everything
+  // else gets nothing (the small floating label in House.tsx is enough at
+  // the dashboard's overview zoom). Click any label to zoom in and reveal
+  // its card.
+  if (!zoomedRoomId) return null;
+
+  const zoomedLabel = roomLabels.find((l) => l.id === zoomedRoomId);
+  if (!zoomedLabel) return null;
+
   return (
     <group>
-      {roomLabels.map((label) => (
-        <RoomNode key={label.id} label={label} />
-      ))}
+      <RoomNode label={zoomedLabel} />
     </group>
   );
 }
@@ -71,11 +83,11 @@ function RoomNode({ label }: { label: RoomLabel }) {
       zIndexRange={[20, 0]}
       wrapperClass="room-node-wrapper"
     >
-      <RoomNodeButton
-        instanceId={primary.id}
+      <RoomNodeCard
         template={primaryTemplate}
         instance={primary}
         roomName={label.name}
+        roomType={label.type}
         totalMinutes={totalMinutes}
         assignee={assignee}
         assigneeColor={assigneeColor}
@@ -87,10 +99,13 @@ function RoomNode({ label }: { label: RoomLabel }) {
   );
 }
 
-function RoomNodeButton({
+// Same dimensions / structure as the sidebar PersonCard. Click anywhere on
+// the card to open the CompleteDialog.
+function RoomNodeCard({
   template,
   instance,
   roomName,
+  roomType,
   totalMinutes,
   assignee,
   assigneeColor,
@@ -98,10 +113,10 @@ function RoomNodeButton({
   dragging,
   onClick,
 }: {
-  instanceId: string;
   template: TaskTemplate;
   instance: TaskInstance;
   roomName: string;
+  roomType: RoomType;
   totalMinutes: number;
   assignee: Profile | null;
   assigneeColor: string | null;
@@ -119,19 +134,45 @@ function RoomNodeButton({
   const isAssigned = instance.status === "assigned";
   const isPending = instance.status === "pending";
 
-  // Colour styling — assigned: the assignee's colour fills the chip;
-  // pending: red ring with a faint pulse; completed: green; otherwise neutral.
-  const ringStyle: React.CSSProperties = isAssigned && assigneeColor
-    ? { borderColor: assigneeColor, boxShadow: `0 0 0 2px ${assigneeColor}33` }
+  // Card variants — complete = sage tint. Pending and assigned keep the
+  // chunky white card; the state pill carries the urgency colour.
+  const cardStyle: React.CSSProperties = allCompleted
+    ? { background: "var(--complete-bg)", borderColor: "var(--complete-fg)" }
     : {};
 
   const stateChip = allCompleted
-    ? { label: "Done", className: "bg-green-100 text-green-700" }
+    ? { label: "Clean",   className: "bg-[var(--complete-bg)] text-[var(--complete-fg)] border border-[var(--complete-fg)]" }
     : isAssigned
-      ? { label: "Active", className: "bg-orange-100 text-orange-700" }
+      ? { label: "Active",  className: "bg-[#FFE7CF] text-[#C25500]" }
       : isPending
-        ? { label: "Pending", className: "bg-red-100 text-red-700" }
-        : { label: "Queued", className: "bg-amber-100 text-amber-700" };
+        ? { label: "Pending", className: "bg-[#FDE2E2] text-[#B23A3A]" }
+        : { label: "Queued",  className: "bg-[#FFE7CF] text-[#9A5A00]" };
+
+  // Status line — mirrors the resident card's "● 1 active" pattern.
+  const statusDotClass = allCompleted
+    ? "bg-[var(--complete-fg)]"
+    : isAssigned
+      ? "bg-[var(--primary)]"
+      : isPending
+        ? "bg-[#B23A3A]"
+        : "border-2 border-[var(--muted)]";
+
+  const statusText = allCompleted
+    ? "Clean"
+    : isAssigned
+      ? "In progress"
+      : isPending
+        ? "Pending"
+        : "Queued";
+
+  // The countdown / time text. Live countdown when assigned, otherwise the
+  // sum of all task durations.
+  const timeText = countdown ? countdown.label : `~${totalMinutes} min`;
+  const timeClassName = countdown?.overdue
+    ? "text-[var(--danger)]"
+    : countdown && countdown.fraction > 0.75
+      ? "text-[#C25500]"
+      : "text-[var(--foreground-soft)]";
 
   return (
     <button
@@ -142,67 +183,99 @@ function RoomNodeButton({
         if (dragging) return;
         onClick();
       }}
-      style={ringStyle}
-      className={`group/node relative flex min-w-[140px] flex-col items-stretch gap-1 rounded-lg border-[1.5px] bg-white px-2.5 py-1.5 text-left shadow-md transition hover:-translate-y-px hover:shadow-lg ${
-        isAssigned ? "" : isPending ? "border-red-400" : "border-neutral-200"
-      }`}
+      style={cardStyle}
+      className="blocky-card group/node relative flex w-[240px] cursor-pointer items-center gap-3 px-3 py-3 text-left shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
       title={template.name}
     >
-      {/* pulse halo on pending */}
+      {/* Soft pulse halo on pending */}
       {isPending && (
-        <span className="pointer-events-none absolute inset-0 -z-10 animate-ping rounded-lg bg-red-400/30" />
+        <span className="pointer-events-none absolute inset-0 -z-10 animate-ping rounded-[24px] bg-red-400/25" />
       )}
 
-      {/* Header row: room name + state chip */}
-      <div className="flex items-center justify-between gap-1.5">
-        <span className="truncate text-[10px] font-semibold uppercase tracking-[0.14em] text-neutral-700">
-          {roomName}
-        </span>
-        <span
-          className={`shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider ${stateChip.className}`}
-        >
-          {stateChip.label}
-        </span>
-      </div>
+      {/* Left: glyph in a 38px round badge — same footprint as PersonFigure */}
+      <RoomGlyph type={roomType} complete={allCompleted} />
 
-      {/* Time / countdown + subtask progress */}
-      <div className="flex items-center justify-between gap-1.5">
-        <span className="font-mono text-[11px] tabular-nums text-neutral-600">
-          {countdown ? (
-            <span
-              className={
-                countdown.overdue
-                  ? "text-red-600"
-                  : countdown.fraction > 0.75
-                    ? "text-orange-600"
-                    : "text-neutral-700"
-              }
-            >
-              {countdown.label}
-            </span>
-          ) : (
-            <>~{totalMinutes} min</>
-          )}
-        </span>
-        {totalSubtasks > 0 && (
-          <span className="font-mono text-[10px] text-neutral-400">
-            {doneCount}/{totalSubtasks}
+      <div className="min-w-0 flex-1">
+        {/* Top row: room name + state pill */}
+        <div className="flex items-center gap-1.5">
+          <span
+            className="truncate text-base font-bold leading-tight text-[var(--foreground)]"
+            style={allCompleted ? { color: "var(--complete-fg)" } : undefined}
+          >
+            {roomName}
           </span>
+          <span
+            className={`rounded-md px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.18em] ${stateChip.className}`}
+          >
+            {stateChip.label}
+          </span>
+        </div>
+
+        {/* Status line — dot + text + meta */}
+        <div className="mt-1.5 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-[var(--foreground-soft)]">
+          <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
+          <span>{statusText}</span>
+          <span className="text-[var(--muted)]">·</span>
+          <span className={`font-mono normal-case tracking-normal ${timeClassName}`}>
+            {timeText}
+          </span>
+          {totalSubtasks > 0 && (
+            <>
+              <span className="text-[var(--muted)]">·</span>
+              <span className="font-mono normal-case tracking-normal text-[var(--muted)]">
+                {doneCount}/{totalSubtasks}
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Secondary line — assignee or task name. Mirrors the resident
+            card's "→ currentTaskName" pattern. */}
+        {assignee ? (
+          <div
+            className="mt-1.5 flex items-center gap-1.5 truncate text-[13px] font-bold italic"
+            style={{ color: assigneeColor ?? "var(--foreground)" }}
+          >
+            <span
+              className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+              style={{ backgroundColor: assigneeColor ?? "#525252" }}
+            >
+              {assignee.full_name[0]}
+            </span>
+            <span className="truncate">{assignee.full_name}</span>
+          </div>
+        ) : (
+          <div className="mt-1.5 truncate text-[13px] font-medium italic text-[var(--muted)]">
+            → {template.name}
+          </div>
         )}
       </div>
-
-      {/* Assignee chip — only when someone is working on it */}
-      {assignee && (
-        <div
-          className="-mx-2.5 -mb-1.5 mt-0.5 flex items-center gap-1.5 rounded-b-md px-2.5 py-1 text-[10px] font-semibold text-white"
-          style={{ backgroundColor: assigneeColor ?? "#525252" }}
-        >
-          <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/30 text-[8px] font-bold">
-            {assignee.full_name[0]}
-          </span>
-          <span className="truncate">{assignee.full_name}</span>
-        </div>
-      )}
     </button>
+  );
+}
+
+// Round badge in the room-type colour with an emoji glyph — the room-card's
+// visual hook on the left, matching the 38px PersonFigure footprint.
+function RoomGlyph({ type, complete }: { type: RoomType; complete: boolean }) {
+  const glyph: Record<RoomType, string> = {
+    bathroom: "🛁",
+    kitchen: "🍳",
+    bedroom: "🛏",
+    living: "◐",
+    tech: "⚡",
+    corridor: "↔",
+  };
+  return (
+    <div
+      className="flex h-[46px] w-[46px] flex-shrink-0 items-center justify-center rounded-full border-2 text-xl"
+      style={{
+        background: complete ? "var(--complete-bg)" : "var(--primary-container)",
+        borderColor: complete ? "var(--complete-fg)" : "var(--primary)",
+        color: complete ? "var(--complete-fg)" : "var(--primary)",
+      }}
+      aria-hidden
+    >
+      {glyph[type]}
+    </div>
   );
 }

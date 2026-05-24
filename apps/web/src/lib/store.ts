@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Profile, Room, RoomType, TaskInstance, TaskTemplate } from "@/lib/types";
 import { SEED_INSTANCES, SEED_PROFILES, SEED_ROOMS, SEED_TEMPLATES } from "@/lib/data/seed";
-import { loadAll, updateInstance, updateInstancesBulk } from "@/lib/supabase-data";
+import { insertProfile, loadAll, updateInstance, updateInstancesBulk } from "@/lib/supabase-data";
 
 // A label that floats over a specific room of the GLB. Position and size
 // are baked in from the friend's manualRoomPositions table (same coordinate
@@ -50,7 +50,13 @@ export interface RoomLabel {
 // centroid; size is the bounding box used to drop status-coloured volumes
 // over each room. Name overrides persist to localStorage.
 const DEFAULT_ROOM_LABELS: RoomLabel[] = [
-  { id: "gallery",          name: "Gallery",       type: "living",   position: [0,     1, -4.01],  size: [5.7,  1.7, 8],   cameraOffset: [ 4, 10, -8] },
+  // The big northern living-room area was originally one rectangle called
+  // Gallery (Z -8 .. 0). It's now split at Bathroom I's north wall (Z = -2.85)
+  // into two rooms: Atrium (the larger northern chunk, kept in the existing
+  // 'gallery' row so task history is preserved) + Symposium (the east-west
+  // strip next to Bathroom I, new row 'atrium').
+  { id: "gallery",          name: "Atrium",        type: "living",   position: [0,     1, -5.43],  size: [5.7,  1.7, 5.16], cameraOffset: [ 4, 10, -8] },
+  { id: "atrium",           name: "Symposium",     type: "living",   position: [0,     1, -1.43],  size: [5.7,  1.7, 2.84], cameraOffset: [ 4,  8, -4] },
   { id: "bathroom1",        name: "Bathroom I",    type: "bathroom", position: [3.75,  1, -1.6],   size: [1.7,  1.7, 2.5], cameraOffset: [ 6,  5, -4] },
   { id: "hardwareLab",      name: "Hardware Lab",  type: "tech",     position: [3.4,   1,  0.8],   size: [2.55, 1.7, 2.2], cameraOffset: [ 7,  4, -3] },
   { id: "techRoom",         name: "Tech Room",     type: "tech",     position: [3.4,   1,  3.6],   size: [2.6,  1.7, 3.5], cameraOffset: [ 7,  4,  3] },
@@ -168,6 +174,10 @@ interface AppState {
   // Used by the Supabase Realtime listener so live updates from the mobile
   // app (or another browser tab) show up here instantly.
   upsertInstanceFromRemote: (next: TaskInstance) => void;
+  upsertProfileFromRemote: (next: Profile) => void;
+
+  // Create a new resident in Supabase and add them locally for instant UI.
+  addProfile: (name: string) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>()(
@@ -311,35 +321,31 @@ export const useAppStore = create<AppState>()(
 
   assignAllPendingInRoom: (roomId, profileId) => {
     const state = get();
-    // Walk the templates in declaration order and pick out the matching
-    // pending instances — that's the queue order people will work in.
-    const pending: TaskInstance[] = [];
+    // Pick up every task in this room that isn't already completed — so
+    // dragging a person onto a room reassigns it from whoever held it
+    // before. Completed tasks stay locked until the daily reset.
+    const candidates: TaskInstance[] = [];
     for (const t of state.templates) {
       if (t.room_id !== roomId) continue;
       const inst = state.instances.find(
-        (i) => i.template_id === t.id && i.room_id === roomId && i.status === "pending",
+        (i) =>
+          i.template_id === t.id &&
+          i.room_id === roomId &&
+          i.status !== "completed",
       );
-      if (inst) pending.push(inst);
+      if (inst) candidates.push(inst);
     }
-    if (pending.length === 0) return [];
+    if (candidates.length === 0) return [];
 
-    // If this person is already actively working in the room, every new
-    // pick-up joins the back of the queue rather than shoving the active
-    // one aside.
-    const alreadyActive = state.instances.some(
-      (i) =>
-        i.room_id === roomId &&
-        i.status === "assigned" &&
-        i.assignee_id === profileId,
-    );
-
+    // Always reset the timer on a fresh assignment — even if it's a
+    // re-assignment from someone else.
     const now = new Date().toISOString();
-    const headId = alreadyActive ? null : pending[0].id;
-    const queuedIds = new Set(pending.map((p) => p.id));
+    const headId = candidates[0].id;
+    const candidateIds = new Set(candidates.map((c) => c.id));
 
     set((s) => ({
       instances: s.instances.map((i) => {
-        if (!queuedIds.has(i.id)) return i;
+        if (!candidateIds.has(i.id)) return i;
         if (i.id === headId) {
           return { ...i, assignee_id: profileId, status: "assigned" as const, assigned_at: now };
         }
@@ -349,17 +355,17 @@ export const useAppStore = create<AppState>()(
 
     if (get().dataSource === "supabase") {
       void updateInstancesBulk(
-        pending.map((p) => ({
-          id: p.id,
+        candidates.map((c) => ({
+          id: c.id,
           patch:
-            p.id === headId
+            c.id === headId
               ? { assignee_id: profileId, status: "assigned" as const, assigned_at: now }
               : { assignee_id: profileId, status: "queued" as const, assigned_at: null },
         })),
       );
     }
 
-    return pending.map((p) => p.id);
+    return candidates.map((c) => c.id);
   },
 
   loadFromSupabase: async () => {
@@ -389,28 +395,39 @@ export const useAppStore = create<AppState>()(
       return { instances };
     });
   },
+
+  upsertProfileFromRemote: (next) => {
+    set((s) => {
+      const exists = s.profiles.some((p) => p.id === next.id);
+      const profiles = exists
+        ? s.profiles.map((p) => (p.id === next.id ? next : p))
+        : [...s.profiles, next];
+      return { profiles };
+    });
+  },
+
+  addProfile: async (name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    // Optimistic add disabled — let Supabase assign the UUID and round-trip
+    // the row, so local state and DB never diverge on the primary key.
+    const profile = await insertProfile(trimmed);
+    set((s) => {
+      if (s.profiles.some((p) => p.id === profile.id)) return s;
+      return { profiles: [...s.profiles, profile] };
+    });
+  },
     }),
     {
-      name: "house-tasks",
+      name: "house-tasks-v3",
       storage: createJSONStorage(() => localStorage),
-      // Persist *only* room-label name overrides ({ id: customName }). The
-      // positions and the set of rooms come from DEFAULT_ROOM_LABELS in code
-      // so adding a room or moving a label always wins over stale storage.
-      partialize: (s) => ({
-        roomLabelNames: Object.fromEntries(s.roomLabels.map((l) => [l.id, l.name])),
-      }),
-      merge: (persisted, current) => {
-        const names =
-          (persisted as { roomLabelNames?: Record<string, string> } | undefined)
-            ?.roomLabelNames ?? {};
-        return {
-          ...current,
-          roomLabels: DEFAULT_ROOM_LABELS.map((l) => ({
-            ...l,
-            name: names[l.id] ?? l.name,
-          })),
-        };
-      },
+      // Don't persist anything to localStorage anymore. The Supabase load
+      // gives us the live truth on every page load, and the code's
+      // DEFAULT_ROOM_LABELS gives us the geometry. Persisting room name
+      // overrides caused renames in code to be silently swallowed by stale
+      // browser storage.
+      partialize: () => ({}),
+      merge: (_persisted, current) => current,
     },
   ),
 );
