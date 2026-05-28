@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { supabase } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase-data";
 
 type Props = {
   instanceId: string;
@@ -62,11 +62,10 @@ export function CleaningFlowScreen({
     void fetchInstance();
   }, [fetchInstance]);
 
-  // Realtime subscription on this specific row, mirrors the iOS app's
-  // per-instance channel.
+  // Realtime subscription on this specific row.
   useEffect(() => {
     const channel = supabase
-      .channel(`mobile_web_instance_${instanceId}`)
+      .channel(`web_user_instance_${instanceId}`)
       .on(
         "postgres_changes",
         {
@@ -101,7 +100,6 @@ export function CleaningFlowScreen({
       .update({ subtasks_done: nextDone })
       .eq("id", instance.id);
     if (error) {
-      // Roll back the optimistic update.
       setInstance({ ...instance, subtasks_done: subtasksDone });
       alert(`Could not save: ${error.message}`);
     }
@@ -229,9 +227,7 @@ export function CleaningFlowScreen({
                     className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md border-2 text-white"
                     style={{
                       background: checked ? COMPLETE_FG : "var(--surface)",
-                      borderColor: checked
-                        ? COMPLETE_FG
-                        : "var(--muted-soft)",
+                      borderColor: checked ? COMPLETE_FG : "var(--muted-soft)",
                     }}
                   >
                     {checked && (
@@ -260,8 +256,8 @@ export function CleaningFlowScreen({
       <div className="mt-8 pt-4">
         {isComplete ? (
           <div
-            className="btn-pill-primary"
-            style={{ background: COMPLETE_FG, cursor: "default" }}
+            className="flex w-full items-center justify-center gap-2 rounded-full px-6 py-3.5 text-[16px] font-bold text-white"
+            style={{ background: COMPLETE_FG }}
           >
             ✓ Room marked clean
           </div>
@@ -269,7 +265,7 @@ export function CleaningFlowScreen({
           <button
             onClick={markRoomComplete}
             disabled={finishing}
-            className="btn-pill-primary"
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-[var(--foreground)] px-6 py-3.5 text-[16px] font-bold text-white transition hover:opacity-90 disabled:opacity-50"
           >
             {finishing ? "Saving…" : "Mark room complete"}
           </button>
@@ -310,15 +306,7 @@ const INV_STATUS_COLOR: Record<InvStatus, string> = {
   out: "#D9534F",
 };
 
-const INV_STATUS_LABEL: Record<InvStatus, string> = {
-  in: "In stock",
-  low: "Low",
-  out: "Out",
-};
-
-// Per-room inventory, logged from inside the room's task flow. Reads / writes
-// public.room_inventory (see migration 0004). Tolerant of the table not
-// existing yet: shows a quiet "not set up" note instead of crashing.
+// Per-room inventory, logged from inside the room's task flow.
 function RoomInventory({
   roomId,
   currentUserId,
@@ -340,7 +328,6 @@ function RoomInventory({
       .eq("room_id", roomId)
       .order("name");
     if (error) {
-      // Most likely the table hasn't been created yet — degrade quietly.
       setUnavailable(true);
       setLoading(false);
       return;
@@ -354,10 +341,9 @@ function RoomInventory({
     void load();
   }, [load]);
 
-  // Live updates so two people logging the same room stay in sync.
   useEffect(() => {
     const channel = supabase
-      .channel(`mobile_web_inventory_${roomId}`)
+      .channel(`web_user_inventory_${roomId}`)
       .on(
         "postgres_changes",
         {
@@ -391,7 +377,7 @@ function RoomInventory({
       })
       .eq("id", item.id);
     if (error) {
-      setItems(prev); // roll back
+      setItems(prev);
       alert(`Could not save: ${error.message}`);
     }
   };
@@ -432,9 +418,7 @@ function RoomInventory({
       <div>
         <SectionLabel>Room inventory</SectionLabel>
         <div className="soft-card px-4 py-4 text-center text-[14px] text-[var(--muted)]">
-          Inventory isn&apos;t set up yet. Run migration{" "}
-          <code className="text-[13px]">0004_room_inventory.sql</code> in
-          Supabase to enable it.
+          Inventory isn&apos;t set up for this room.
         </div>
       </div>
     );
@@ -447,8 +431,8 @@ function RoomInventory({
         {!adding && (
           <button
             onClick={() => setAdding(true)}
-            className="btn-pill-ghost"
             aria-label="Add inventory item"
+            className="rounded-full border border-[var(--line)] bg-[var(--surface)] px-3.5 py-1.5 text-[13px] font-bold text-[var(--foreground-soft)] transition hover:bg-[var(--background)]"
           >
             + Add item
           </button>
@@ -470,7 +454,6 @@ function RoomInventory({
 
         {items.map((item) => {
           const status = invStatus(item);
-          // Compact meta line: category · source · purchase frequency.
           const meta = [item.category, item.source, item.purchase_frequency]
             .filter(Boolean)
             .join(" · ");
@@ -489,9 +472,7 @@ function RoomInventory({
                   {item.name}
                 </p>
                 {meta && (
-                  <p className="mt-0.5 text-[12px] text-[var(--muted)]">
-                    {meta}
-                  </p>
+                  <p className="mt-0.5 text-[12px] text-[var(--muted)]">{meta}</p>
                 )}
                 {item.special_requests && (
                   <p className="mt-0.5 text-[12px] italic text-[var(--foreground-soft)]">
@@ -558,8 +539,6 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
-// Editable quantity: the user can type the current stock directly, or nudge
-// it with the −/+ steppers. Typed value is committed on blur or Enter.
 function QtyControl({
   name,
   value,
@@ -575,7 +554,6 @@ function QtyControl({
 }) {
   const [text, setText] = useState(String(value));
 
-  // Keep the field in sync when the value changes elsewhere (steppers, realtime).
   useEffect(() => {
     setText(String(value));
   }, [value]);
@@ -583,7 +561,7 @@ function QtyControl({
   const commit = () => {
     const n = parseFloat(text);
     if (!Number.isNaN(n) && n >= 0) onSet(n);
-    else setText(String(value)); // reject junk, restore
+    else setText(String(value));
   };
 
   return (
@@ -611,9 +589,7 @@ function QtyControl({
         </QtyButton>
       </div>
       {unit && (
-        <span className="text-[11px] font-medium text-[var(--muted)]">
-          {unit}
-        </span>
+        <span className="text-[11px] font-medium text-[var(--muted)]">{unit}</span>
       )}
     </div>
   );

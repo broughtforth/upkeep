@@ -14,16 +14,16 @@ const WALL_H = 1.4;
 
 export const SEED_ROOMS: Room[] = [
   { id: "kitchen",          name: "The Kitchen",   type: "kitchen",  position_x:  3.7,  position_z: -5.5,   width: 1.7,  depth: 5.1,  height: WALL_H, color: "#fafafa" },
-  { id: "bathroom1",        name: "Bathroom I",    type: "bathroom", position_x:  3.75, position_z: -1.6,   width: 1.7,  depth: 2.5,  height: WALL_H, color: "#fafafa" },
-  { id: "hardwareLab",      name: "Hardware Lab",  type: "tech",     position_x:  3.4,  position_z:  0.8,   width: 2.55, depth: 2.2,  height: WALL_H, color: "#fafafa" },
+  { id: "bathroom1",        name: "Symposium Bathroom", type: "bathroom", position_x:  3.75, position_z: -1.6,   width: 1.7,  depth: 2.5,  height: WALL_H, color: "#fafafa" },
+  { id: "hardwareLab",      name: "The Forge",     type: "tech",     position_x:  3.4,  position_z:  0.8,   width: 2.55, depth: 2.2,  height: WALL_H, color: "#fafafa" },
   { id: "techRoom",         name: "The Tech Room", type: "tech",     position_x:  3.4,  position_z:  3.6,   width: 2.6,  depth: 3.5,  height: WALL_H, color: "#fafafa" },
   { id: "gallery",          name: "Gallery",       type: "living",   position_x:  0,    position_z: -4.01,  width: 5.7,  depth: 8.0,  height: WALL_H, color: "#fafafa" },
   { id: "hallway",          name: "Hallway",       type: "corridor", position_x:  1.4,  position_z:  2.8,   width: 1.3,  depth: 5.5,  height: WALL_H, color: "#efe7d4" },
-  { id: "library",          name: "Library",       type: "living",   position_x: -1.1,  position_z:  1.3,   width: 3.5,  depth: 2.2,  height: WALL_H, color: "#fafafa" },
+  { id: "library",          name: "Zen Room",      type: "living",   position_x: -1.1,  position_z:  1.3,   width: 3.5,  depth: 2.2,  height: WALL_H, color: "#fafafa" },
   { id: "closet",           name: "Closet",        type: "living",   position_x: -0.5,  position_z:  3.55,  width: 1.5,  depth: 1.95, height: WALL_H, color: "#fafafa" },
-  { id: "warroomServerHub", name: "War Room",      type: "tech",     position_x: -0.55, position_z:  7,     width: 2.75, depth: 2.4,  height: WALL_H, color: "#fafafa" },
-  { id: "bathroom2",        name: "Bathroom II",   type: "bathroom", position_x: -2.05, position_z:  3.7,   width: 1.5,  depth: 2.4,  height: WALL_H, color: "#fafafa" },
-  { id: "bathroom3",        name: "Bathroom III",  type: "bathroom", position_x: -2.5,  position_z:  6.155, width: 0.7,  depth: 2.3,  height: WALL_H, color: "#fafafa" },
+  { id: "warroomServerHub", name: "Studio",        type: "tech",     position_x: -0.55, position_z:  7,     width: 2.75, depth: 2.4,  height: WALL_H, color: "#fafafa" },
+  { id: "bathroom2",        name: "Closet Bathroom", type: "bathroom", position_x: -2.05, position_z:  3.7,   width: 1.5,  depth: 2.4,  height: WALL_H, color: "#fafafa" },
+  { id: "bathroom3",        name: "Studio Bathroom", type: "bathroom", position_x: -2.5,  position_z:  6.155, width: 0.7,  depth: 2.3,  height: WALL_H, color: "#fafafa" },
 ];
 
 // Real Telos House residents (Names.txt)

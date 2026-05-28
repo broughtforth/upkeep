@@ -5,6 +5,7 @@ import { getCurrentUserId } from "@/lib/session";
 import { OnboardingScreen } from "@/components/OnboardingScreen";
 import { HomeScreen } from "@/components/HomeScreen";
 import { CleaningFlowScreen } from "@/components/CleaningFlowScreen";
+import { HistoryScreen } from "@/components/HistoryScreen";
 
 // Mirror of apps/mobile/src/App.tsx — picks a screen based on whether a user
 // is signed in and whether they've tapped a room tile.
@@ -12,6 +13,7 @@ import { CleaningFlowScreen } from "@/components/CleaningFlowScreen";
 type View =
   | { kind: "onboarding" }
   | { kind: "home"; userId: string }
+  | { kind: "history"; userId: string }
   | { kind: "flow"; userId: string; instanceId: string };
 
 export default function Page() {
@@ -45,7 +47,19 @@ export default function Page() {
         onPickRoom={(instanceId) =>
           setView({ kind: "flow", userId: view.userId, instanceId })
         }
+        onOpenHistory={() =>
+          setView({ kind: "history", userId: view.userId })
+        }
         onSignOut={() => setView({ kind: "onboarding" })}
+      />
+    );
+  }
+
+  if (view.kind === "history") {
+    return (
+      <HistoryScreen
+        currentUserId={view.userId}
+        onBack={() => setView({ kind: "home", userId: view.userId })}
       />
     );
   }
@@ -53,6 +67,7 @@ export default function Page() {
   return (
     <CleaningFlowScreen
       instanceId={view.instanceId}
+      currentUserId={view.userId}
       onBack={() => setView({ kind: "home", userId: view.userId })}
       onComplete={() => setView({ kind: "home", userId: view.userId })}
     />

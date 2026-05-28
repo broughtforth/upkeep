@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { setCurrentUserId } from "@/lib/session";
+import { supabase } from "@/lib/supabase-data";
 
 type Props = {
   currentUserId: string;
@@ -48,9 +47,7 @@ export function HomeScreen({
         .single();
       if (cancelled) return;
       if (error) {
-        // Most likely the stored user id is no longer valid (resident deleted
-        // from Supabase). Bounce back to the picker.
-        setCurrentUserId(null);
+        // Profile vanished — bounce back to sign-in.
         onSignOut();
         return;
       }
@@ -101,11 +98,10 @@ export function HomeScreen({
     void load();
   }, [load]);
 
-  // Realtime: refetch whenever any task_instance row changes. Cheap enough
-  // for our scale; mirrors the iOS app's HomeScreen subscription.
+  // Realtime: refetch whenever any task_instance row changes.
   useEffect(() => {
     const channel = supabase
-      .channel("mobile_web_home")
+      .channel("web_user_home")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "task_instances" },
@@ -158,8 +154,7 @@ export function HomeScreen({
           {rooms.map((r, i) => {
             // A lone card (or the odd one out) spans both columns so the grid
             // never leaves a lopsided empty half.
-            const isLastOdd =
-              i === rooms.length - 1 && rooms.length % 2 === 1;
+            const isLastOdd = i === rooms.length - 1 && rooms.length % 2 === 1;
             return (
               <RoomTile
                 key={r.instanceId}
@@ -213,8 +208,7 @@ function RoomTile({
   );
 }
 
-// Header overflow menu. A small popover with the off-the-main-page actions:
-// Completed history and Sign out.
+// Header overflow menu: Completed history + Sign out.
 function Menu({
   onOpenHistory,
   onSignOut,
@@ -263,7 +257,6 @@ function Menu({
             danger
             onClick={() => {
               setOpen(false);
-              setCurrentUserId(null);
               onSignOut();
             }}
           />
