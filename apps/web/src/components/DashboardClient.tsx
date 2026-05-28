@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { DndContext, DragEndEvent, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { House } from "@/components/house/House";
+import { RoomInventoryPanel } from "@/components/house/RoomInventoryPanel";
 import { PeopleList } from "@/components/sidebar/PeopleList";
 import { PersonFigure } from "@/components/sidebar/PersonFigure";
 import { CompleteDialog } from "@/components/task/CompleteDialog";
@@ -58,7 +59,7 @@ function useSupabaseSync() {
 }
 
 
-export function DashboardClient() {
+export function DashboardClient({ onSignOut }: { onSignOut?: () => void }) {
   useSupabaseSync();
   const [helpOpen, setHelpOpen] = useState(false);
   const profiles = useAppStore((s) => s.profiles);
@@ -150,6 +151,11 @@ export function DashboardClient() {
             >
               {editMode ? "Done" : "Edit"}
             </button>
+            {onSignOut && (
+              <button onClick={onSignOut} className="btn-pill-ghost">
+                Sign out
+              </button>
+            )}
           </div>
 
           {/* Help popover — opens below the ? button */}
@@ -184,6 +190,9 @@ export function DashboardClient() {
               Drop on a room (whole room) or a pin (one task)
             </div>
           )}
+
+          {/* Read-only inventory for the room currently clicked/zoomed. */}
+          <RoomInventoryPanel />
 
         </main>
 

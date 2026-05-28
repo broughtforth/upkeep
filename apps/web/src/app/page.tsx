@@ -1,5 +1,5 @@
-import { DashboardClient } from "@/components/DashboardClient";
+import { AppRoot } from "@/components/AppRoot";
 
 export default function Page() {
-  return <DashboardClient />;
+  return <AppRoot />;
 }

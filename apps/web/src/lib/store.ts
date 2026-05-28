@@ -57,8 +57,8 @@ const DEFAULT_ROOM_LABELS: RoomLabel[] = [
   // strip next to Bathroom I, new row 'atrium').
   { id: "gallery",          name: "Atrium",        type: "living",   position: [0,     1, -5.43],  size: [5.7,  1.7, 5.16], cameraOffset: [ 4, 10, -8] },
   { id: "atrium",           name: "Symposium",     type: "living",   position: [0,     1, -1.43],  size: [5.7,  1.7, 2.84], cameraOffset: [ 4,  8, -4] },
-  { id: "bathroom1",        name: "Bathroom I",    type: "bathroom", position: [3.75,  1, -1.6],   size: [1.7,  1.7, 2.5], cameraOffset: [ 6,  5, -4] },
-  { id: "hardwareLab",      name: "Hardware Lab",  type: "tech",     position: [3.4,   1,  0.8],   size: [2.55, 1.7, 2.2], cameraOffset: [ 7,  4, -3] },
+  { id: "bathroom1",        name: "Symposium Bathroom", type: "bathroom", position: [3.75,  1, -1.6],   size: [1.7,  1.7, 2.5], cameraOffset: [ 6,  5, -4] },
+  { id: "hardwareLab",      name: "The Forge",     type: "tech",     position: [3.4,   1,  0.8],   size: [2.55, 1.7, 2.2], cameraOffset: [ 7,  4, -3] },
   { id: "techRoom",         name: "Tech Room",     type: "tech",     position: [3.4,   1,  3.6],   size: [2.6,  1.7, 3.5], cameraOffset: [ 7,  4,  3] },
   // Hallway shape derived from actual GLB wall positions (extracted by
   // parsing the mesh). The corridor steps westward as it goes south —
@@ -89,9 +89,9 @@ const DEFAULT_ROOM_LABELS: RoomLabel[] = [
       [ 0.70, 2.82],
     ],
   },
-  { id: "library",          name: "Library",       type: "living",   position: [-1.1,  1,  1.3],   size: [3.5,  1.7, 2.2],  cameraOffset: [-7,  4,  2] },
+  { id: "library",          name: "Zen Room",      type: "living",   position: [-1.1,  1,  1.3],   size: [3.5,  1.7, 2.2],  cameraOffset: [-7,  4,  2] },
   { id: "closet",           name: "Closet",        type: "bedroom",  position: [-0.5,  1,  3.55],  size: [1.5,  1.7, 1.95], cameraOffset: [ 4,  6,  5] },
-  { id: "bathroom2",        name: "Bathroom II",   type: "bathroom", position: [-2.05, 1,  3.7],   size: [1.5,  1.7, 2.4],  cameraOffset: [-7,  4,  3] },
+  { id: "bathroom2",        name: "Closet Bathroom", type: "bathroom", position: [-2.05, 1,  3.7],   size: [1.5,  1.7, 2.4],  cameraOffset: [-7,  4,  3] },
   // Girls room (formerly War Room). The room actually extends well north of
   // its "main" boundary at Z=5.80 — the corridor south of the closet
   // (X[-1.30, -0.10] × Z[4.60, 5.22]) is also part of it. Below Z=5.22 the
@@ -108,7 +108,7 @@ const DEFAULT_ROOM_LABELS: RoomLabel[] = [
   //     hallway pre-girls SW: (-0.10, 5.55) — notch
   {
     id: "warroomServerHub",
-    name: "War Room",
+    name: "Studio",
     type: "tech",
     position: [-0.55, 1, 7],
     size: [2.75, 1.7, 2.4],
@@ -124,7 +124,7 @@ const DEFAULT_ROOM_LABELS: RoomLabel[] = [
       [-1.30, 5.22],  // east along step back to corridor west edge
     ],
   },
-  { id: "bathroom3",        name: "Bathroom III",  type: "bathroom", position: [-2.5,  1,  6.155], size: [0.7,  1.7, 2.3], cameraOffset: [-6,  4,  5] },
+  { id: "bathroom3",        name: "Studio Bathroom", type: "bathroom", position: [-2.5,  1,  6.155], size: [0.7,  1.7, 2.3], cameraOffset: [-6,  4,  5] },
   { id: "kitchen",          name: "Kitchen",       type: "kitchen",  position: [3.7,   1, -5.5],   size: [1.7,  1.7, 5.1], cameraOffset: [ 5,  5, -6] },
 ];
 
