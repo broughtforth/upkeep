@@ -9,8 +9,13 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Profile, Room, TaskInstance, TaskTemplate } from "@/lib/types";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+// Vercel doesn't expose NEXT_PUBLIC_ env vars at build-time for static
+// generation of client pages (they're injected into the bundle but not into
+// process.env on the build worker). Fall back to safe placeholders so the
+// module loads at build time; the real values are baked into the JS bundle
+// by Next, so the runtime client uses the right URL.
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://localhost";
+const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "missing-anon-key";
 
 // One shared browser client. We don't use @supabase/ssr here because the 3D
 // view is fully client-side — server rendering it would be pointless.
