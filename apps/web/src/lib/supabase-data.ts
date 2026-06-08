@@ -108,6 +108,49 @@ export async function updateInstancesBulk(
   await Promise.all(patches.map(({ id, patch }) => updateInstance(id, patch)));
 }
 
+// ─── Inventory (Supplies tab) ───────────────────────────────────────────
+//
+// Mirrors the room_inventory table schema after migrations 0004/0005/0007.
+// `quantity` is numeric because some items are fractional (e.g. 1.5 kg).
+export interface InventoryItem {
+  id: string;
+  room_id: string;
+  name: string;
+  quantity: number;
+  low_threshold: number;
+  category: string | null;
+  unit: string | null;
+  source: string | null;
+  purchase_frequency: string | null;
+  special_requests: string | null;
+  purchase_url: string | null;
+  updated_at: string;
+}
+
+export async function fetchInventory(): Promise<InventoryItem[]> {
+  const { data, error } = await supabase
+    .from("room_inventory")
+    .select("*")
+    .order("room_id")
+    .order("name");
+  if (error) throw error;
+  return (data ?? []) as InventoryItem[];
+}
+
+export async function updateInventoryItem(
+  id: string,
+  patch: Partial<InventoryItem>,
+): Promise<void> {
+  const { error } = await supabase
+    .from("room_inventory")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) {
+    console.error("[supabase] updateInventoryItem failed", error);
+    throw error;
+  }
+}
+
 // Insert a brand-new resident. Supabase generates the UUID via the column's
 // default; we get the row back so the caller can drop it into local state
 // without waiting for Realtime to round-trip. role defaults to 'resident'.

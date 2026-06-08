@@ -8,6 +8,9 @@ const CATEGORY_SYMBOL: Record<TaskCategory, string> = {
   supplies: "⚡",
   cooking: "⌂",
   laundry: "≋",
+  "room-reset": "↻",
+  "zen-setup": "☯",
+  "deep-clean": "✦",
 };
 
 export function TaskList() {

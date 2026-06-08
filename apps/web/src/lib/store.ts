@@ -4,7 +4,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import type { Profile, Room, RoomType, TaskInstance, TaskTemplate } from "@/lib/types";
 import { SEED_INSTANCES, SEED_PROFILES, SEED_ROOMS, SEED_TEMPLATES } from "@/lib/data/seed";
-import { insertProfile, loadAll, updateInstance, updateInstancesBulk } from "@/lib/supabase-data";
+import { insertProfile, loadAll, supabase, updateInstance, updateInstancesBulk } from "@/lib/supabase-data";
 
 // A label that floats over a specific room of the GLB. Position and size
 // are baked in from the friend's manualRoomPositions table (same coordinate
@@ -178,6 +178,8 @@ interface AppState {
 
   // Create a new resident in Supabase and add them locally for instant UI.
   addProfile: (name: string) => Promise<void>;
+  // Toggle today's presence flag. Drag-drop assignments filter on this.
+  setProfilePresence: (id: string, present: boolean) => Promise<void>;
 }
 
 export const useAppStore = create<AppState>()(
@@ -416,6 +418,29 @@ export const useAppStore = create<AppState>()(
       if (s.profiles.some((p) => p.id === profile.id)) return s;
       return { profiles: [...s.profiles, profile] };
     });
+  },
+
+  setProfilePresence: async (id, present) => {
+    // Optimistic update; rollback if Supabase rejects.
+    const before = get().profiles.find((p) => p.id === id)?.present_today;
+    set((s) => ({
+      profiles: s.profiles.map((p) =>
+        p.id === id ? { ...p, present_today: present } : p,
+      ),
+    }));
+    if (get().dataSource !== "supabase") return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ present_today: present })
+      .eq("id", id);
+    if (error) {
+      console.error("[store] setProfilePresence failed", error);
+      set((s) => ({
+        profiles: s.profiles.map((p) =>
+          p.id === id ? { ...p, present_today: before } : p,
+        ),
+      }));
+    }
   },
     }),
     {

@@ -1,5 +1,13 @@
 export type RoomType = "bathroom" | "kitchen" | "tech" | "living" | "bedroom" | "corridor";
-export type TaskCategory = "cleaning" | "supplies" | "cooking" | "laundry";
+export type TaskCategory =
+  | "cleaning"
+  | "supplies"
+  | "cooking"
+  | "laundry"
+  // Added in migration 0007 for the dual view + deep-clean rotations.
+  | "room-reset"
+  | "zen-setup"
+  | "deep-clean";
 export type TaskStatus = "pending" | "queued" | "assigned" | "completed";
 
 export interface Profile {
@@ -7,6 +15,9 @@ export interface Profile {
   full_name: string;
   avatar_url: string | null;
   role: "resident" | "admin";
+  // Resets to true every morning at 8am London via reset_daily_tasks().
+  // Admin toggles it off for anyone who's away.
+  present_today?: boolean;
 }
 
 export interface Room {

@@ -93,8 +93,15 @@ export function CompleteDialog() {
               {symbol}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
-                {room?.name}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+                  {room?.name}
+                </span>
+                {template?.category === "deep-clean" && (
+                  <span className="rounded-md bg-[#3F3D72] px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.18em] text-white">
+                    Deep clean
+                  </span>
+                )}
               </div>
               <h3 className="mt-0.5 text-xl font-bold leading-tight tracking-tight text-[var(--foreground)]">
                 {template?.name}

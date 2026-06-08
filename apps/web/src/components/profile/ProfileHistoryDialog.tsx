@@ -10,6 +10,9 @@ const CATEGORY_SYMBOL: Record<TaskCategory, string> = {
   supplies: "⚡",
   cooking: "⌂",
   laundry: "≋",
+  "room-reset": "↻",
+  "zen-setup": "☯",
+  "deep-clean": "✦",
 };
 
 type Period = "today" | "7d" | "30d" | "all";
@@ -51,7 +54,15 @@ export function ProfileHistoryDialog() {
   const assigned = mine.filter((i) => i.status === "assigned");
   const completed = mine.filter((i) => i.status === "completed");
 
-  const byCategory: Record<TaskCategory, number> = { cleaning: 0, supplies: 0, cooking: 0, laundry: 0 };
+  const byCategory: Record<TaskCategory, number> = {
+    cleaning: 0,
+    supplies: 0,
+    cooking: 0,
+    laundry: 0,
+    "room-reset": 0,
+    "zen-setup": 0,
+    "deep-clean": 0,
+  };
   for (const i of completed) {
     const t = templateById[i.template_id];
     if (t) byCategory[t.category]++;
@@ -118,7 +129,7 @@ export function ProfileHistoryDialog() {
               — By category —
             </h3>
             <div className="grid grid-cols-4 gap-2">
-              {(["cleaning", "supplies", "cooking", "laundry"] as TaskCategory[]).map((cat) => (
+              {(["cleaning", "supplies", "cooking", "laundry", "room-reset", "zen-setup", "deep-clean"] as TaskCategory[]).map((cat) => (
                 <div key={cat} className="rounded-md border border-neutral-200 px-3 py-2">
                   <div className="flex items-baseline justify-between">
                     <span className="font-serif text-lg text-neutral-700">{CATEGORY_SYMBOL[cat]}</span>

@@ -20,9 +20,15 @@ export function PersonCard({
   completedCount,
   currentTaskName,
 }: Props) {
+  // Absent residents can't be dragged onto rooms — feature 2 (presence
+  // selector). Disabling the draggable also strips the listeners/attrs so
+  // dnd-kit silently treats them as inert. They still show in the list,
+  // visually dimmed, so the admin sees who's missing.
+  const isAbsent = profile.present_today === false;
   const { attributes, listeners, setNodeRef, isDragging, transform } = useDraggable({
     id: `person-${profile.id}`,
     data: { profileId: profile.id },
+    disabled: isAbsent,
   });
   const draggingProfileId = useAppStore((s) => s.draggingProfileId);
   const selectProfile = useAppStore((s) => s.selectProfile);
@@ -49,10 +55,14 @@ export function PersonCard({
       {...listeners}
       {...attributes}
       onClick={onClick}
-      className={`blocky-card group relative flex cursor-grab items-center gap-3 px-3 py-3 transition active:cursor-grabbing ${
-        isDragging || isSelf
-          ? "opacity-30"
-          : "hover:-translate-y-0.5 hover:shadow-md"
+      className={`blocky-card group relative flex items-center gap-3 px-3 py-3 transition ${
+        isAbsent
+          ? "cursor-default opacity-45"
+          : `cursor-grab active:cursor-grabbing ${
+              isDragging || isSelf
+                ? "opacity-30"
+                : "hover:-translate-y-0.5 hover:shadow-md"
+            }`
       }`}
     >
       <PersonFigure color={color} size={38} />
@@ -65,6 +75,11 @@ export function PersonCard({
           {profile.role === "admin" && (
             <span className="rounded-md bg-[var(--primary-container)] px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--primary)]">
               Admin
+            </span>
+          )}
+          {isAbsent && (
+            <span className="rounded-md bg-[var(--muted-soft)] px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.18em] text-[var(--muted)]">
+              Away
             </span>
           )}
         </div>

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useAppStore } from "@/lib/store";
 import { PersonCard } from "./PersonCard";
+import { PresencePanel } from "./PresencePanel";
+import { HouseTasksPanel } from "./HouseTasksPanel";
 
 export function PeopleList() {
   const profiles = useAppStore((s) => s.profiles);
@@ -51,8 +53,12 @@ export function PeopleList() {
     };
   });
 
-  // Sort: busy first, then by completed (most active = top of mind)
+  // Sort: present first (absent sink to the bottom), then busy, then by
+  // completed. Keeps the assignable pool at the top of the list.
   decoratedProfiles.sort((a, b) => {
+    const aAbsent = a.profile.present_today === false ? 1 : 0;
+    const bAbsent = b.profile.present_today === false ? 1 : 0;
+    if (aAbsent !== bAbsent) return aAbsent - bAbsent;
     if (a.activeCount !== b.activeCount) return b.activeCount - a.activeCount;
     return b.completedCount - a.completedCount;
   });
@@ -93,6 +99,10 @@ export function PeopleList() {
           Drag a resident onto a flashing room.
         </p>
       </div>
+
+      <PresencePanel />
+      <HouseTasksPanel />
+
       <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto p-4">
         {adding && (
           <div className="blocky-card flex flex-col gap-2 px-3 py-3">

@@ -3,6 +3,7 @@
 import { Html } from "@react-three/drei";
 import { useAppStore, colorFromString, type RoomLabel } from "@/lib/store";
 import { useCountdown } from "@/lib/countdown";
+import { useViewModeContext } from "@/components/ViewModeProvider";
 import type { TaskInstance, TaskTemplate, Profile, RoomType } from "@/lib/types";
 
 // One interactive card shown only for the room currently zoomed into.
@@ -45,23 +46,52 @@ function RoomNode({ label }: { label: RoomLabel }) {
   const profiles = useAppStore((s) => s.profiles);
   const selectInstance = useAppStore((s) => s.selectInstance);
   const draggingProfileId = useAppStore((s) => s.draggingProfileId);
+  const view = useViewModeContext();
 
-  // Find tasks for this room. The roomLabels and the seed-task room_ids both
-  // use the same id strings (e.g. "bathroom1") so a direct compare works.
-  const roomTemplates = templates.filter((t) => t.room_id === label.id);
-  const roomInstances = instances.filter((i) => i.room_id === label.id);
+  // Filter the templates / instances pair to those whose category is visible
+  // in the current view mode (morning vs evening). Deep-clean templates are
+  // always visible (the visibleCategories set includes them) since they
+  // rotate independently of the daily window.
+  const allRoomTemplates = templates.filter((t) => t.room_id === label.id);
+  const visibleTemplateIds = new Set(
+    allRoomTemplates
+      .filter((t) => view.visibleCategories.has(t.category))
+      .map((t) => t.id),
+  );
+  const roomTemplates = allRoomTemplates.filter((t) =>
+    visibleTemplateIds.has(t.id),
+  );
+  const roomInstances = instances.filter(
+    (i) => i.room_id === label.id && visibleTemplateIds.has(i.template_id),
+  );
 
   if (roomTemplates.length === 0) return null;
+
+  // Templates split by daily vs deep-clean. Deep-clean is a separate
+  // recurring rotation surfaced into the room when due (migration 0008).
+  const dailyTemplateIds = new Set(
+    roomTemplates.filter((t) => t.category !== "deep-clean").map((t) => t.id),
+  );
+  const deepCleanInstances = roomInstances.filter(
+    (i) => !dailyTemplateIds.has(i.template_id),
+  );
+  const dailyInstances = roomInstances.filter((i) =>
+    dailyTemplateIds.has(i.template_id),
+  );
 
   // Total estimated minutes — sum across every task in this room.
   const totalMinutes = roomTemplates.reduce((sum, t) => sum + t.duration_min, 0);
 
-  // Aggregate room state: pick the "most urgent" instance to drive the look.
-  // Priority: assigned (active timer) > pending > queued > completed.
-  const active = roomInstances.find((i) => i.status === "assigned");
-  const pending = roomInstances.find((i) => i.status === "pending");
-  const completed = roomInstances.every((i) => i.status === "completed");
-  const primary: TaskInstance | undefined = active ?? pending ?? roomInstances[0];
+  // The room card always reads as the daily task; deep-cleans are surfaced
+  // separately. Falls back to whichever instance exists if there's no daily
+  // task (e.g. a hallway-anchored, house-wide deep-clean).
+  const candidateInstances =
+    dailyInstances.length > 0 ? dailyInstances : roomInstances;
+  const active = candidateInstances.find((i) => i.status === "assigned");
+  const pending = candidateInstances.find((i) => i.status === "pending");
+  const completed = candidateInstances.every((i) => i.status === "completed");
+  const primary: TaskInstance | undefined =
+    active ?? pending ?? candidateInstances[0];
 
   if (!primary) return null;
 
@@ -69,6 +99,12 @@ function RoomNode({ label }: { label: RoomLabel }) {
     (t) => t.id === primary.template_id,
   );
   if (!primaryTemplate) return null;
+
+  // Has any deep-clean task that isn't already completed? Used for the +DC
+  // badge on the card.
+  const openDeepClean = deepCleanInstances.find(
+    (i) => i.status !== "completed",
+  );
 
   const assignee: Profile | null = primary.assignee_id
     ? profiles.find((p) => p.id === primary.assignee_id) ?? null
@@ -93,6 +129,7 @@ function RoomNode({ label }: { label: RoomLabel }) {
         assigneeColor={assigneeColor}
         allCompleted={completed}
         dragging={draggingProfileId !== null}
+        deepCleanInstanceId={openDeepClean?.id}
         onClick={() => selectInstance(primary.id)}
       />
     </Html>
@@ -111,6 +148,7 @@ function RoomNodeCard({
   assigneeColor,
   allCompleted,
   dragging,
+  deepCleanInstanceId,
   onClick,
 }: {
   template: TaskTemplate;
@@ -122,8 +160,12 @@ function RoomNodeCard({
   assigneeColor: string | null;
   allCompleted: boolean;
   dragging: boolean;
+  // When the room has a still-open deep-clean rotation, the badge becomes
+  // a clickable jump-link that opens that instance's dialog.
+  deepCleanInstanceId?: string;
   onClick: () => void;
 }) {
+  const selectInstance = useAppStore((s) => s.selectInstance);
   const countdown = useCountdown(
     instance.status === "assigned" ? instance.assigned_at : null,
     template.duration_min,
@@ -196,7 +238,7 @@ function RoomNodeCard({
       <RoomGlyph type={roomType} complete={allCompleted} />
 
       <div className="min-w-0 flex-1">
-        {/* Top row: room name + state pill */}
+        {/* Top row: room name + state pill + optional deep-clean badge */}
         <div className="flex items-center gap-1.5">
           <span
             className="truncate text-base font-bold leading-tight text-[var(--foreground)]"
@@ -209,6 +251,20 @@ function RoomNodeCard({
           >
             {stateChip.label}
           </span>
+          {deepCleanInstanceId && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                selectInstance(deepCleanInstanceId);
+              }}
+              title="Open the deep-clean task"
+              className="rounded-md bg-[#3F3D72] px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.18em] text-white hover:bg-[#2E2D54]"
+            >
+              + Deep clean
+            </button>
+          )}
         </div>
 
         {/* Status line — dot + text + meta */}
