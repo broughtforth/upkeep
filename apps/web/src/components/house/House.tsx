@@ -367,147 +367,11 @@ function RoomFurnitures() {
   );
 }
 
-// ─── Room-label collision avoidance ──────────────────────────────────────
-//
-// Floating labels are fixed-pixel-size pills anchored at room centres. When
-// rooms are packed tightly their labels project to nearby screen points and
-// overlap. We solve it in screen space: each frame every label reports its
-// projected centre + measured box to a shared registry; a single resolver
-// pass keeps higher-priority (larger-room) labels and hides any lower one
-// whose box intersects a kept label. Priority = room footprint area.
-
-type LabelEntry = {
-  id: string;
-  priority: number; // larger room → higher priority → kept first
-  cx: number; // projected screen centre x (px)
-  cy: number; // projected screen centre y (px)
-  halfW: number; // half measured width + gap (px)
-  halfH: number; // half measured height + gap (px)
-};
-
-// Minimum clear gap (px) enforced between any two visible labels.
-const LABEL_GAP = 6;
-
-const labelRegistry = new Map<string, LabelEntry>();
-const hiddenLabelIds = { current: new Set<string>() };
-let resolverScheduled = false;
-const collisionSubscribers = new Set<() => void>();
-
-// Axis-aligned box overlap test, with the gap already baked into the halves.
-function boxesOverlap(a: LabelEntry, b: LabelEntry): boolean {
-  return (
-    Math.abs(a.cx - b.cx) < a.halfW + b.halfW &&
-    Math.abs(a.cy - b.cy) < a.halfH + b.halfH
-  );
-}
-
-// Recompute which labels are hidden. Greedy by priority: walk labels from
-// largest room to smallest, keep one if it doesn't collide with any already
-// kept, otherwise hide it. O(n²) over ~14 labels — trivially cheap.
-function resolveCollisions() {
-  resolverScheduled = false;
-  const entries = [...labelRegistry.values()].sort(
-    (a, b) => b.priority - a.priority,
-  );
-  const kept: LabelEntry[] = [];
-  const nextHidden = new Set<string>();
-  for (const e of entries) {
-    if (kept.some((k) => boxesOverlap(e, k))) {
-      nextHidden.add(e.id);
-    } else {
-      kept.push(e);
-    }
-  }
-  // Only notify if the hidden set actually changed, to avoid render churn.
-  const prev = hiddenLabelIds.current;
-  let changed = prev.size !== nextHidden.size;
-  if (!changed) {
-    for (const id of nextHidden) {
-      if (!prev.has(id)) {
-        changed = true;
-        break;
-      }
-    }
-  }
-  if (changed) {
-    hiddenLabelIds.current = nextHidden;
-    for (const notify of collisionSubscribers) notify();
-  }
-}
-
-function scheduleResolve() {
-  if (resolverScheduled) return;
-  resolverScheduled = true;
-  // Defer to a microtask so all labels finish reporting their frame's box
-  // before we resolve once.
-  queueMicrotask(resolveCollisions);
-}
-
-// Projects the label to screen space each frame, reports its box to the
-// registry, and returns { hidden, ref }. Attach `ref` to the label's content
-// element so its measured size feeds the collision test.
-function useLabelCollision(label: RoomLabel): {
-  hidden: boolean;
-  ref: React.RefObject<HTMLButtonElement | null>;
-} {
-  const { camera, size } = useThree();
-  const ref = useRef<HTMLButtonElement | null>(null);
-  const [hidden, setHidden] = useState(false);
-
-  // Priority = footprint area (width × depth). Bigger rooms win ties.
-  const priority = label.size[0] * label.size[2];
-
-  useEffect(() => {
-    const onChange = () => setHidden(hiddenLabelIds.current.has(label.id));
-    collisionSubscribers.add(onChange);
-    onChange();
-    return () => {
-      collisionSubscribers.delete(onChange);
-      labelRegistry.delete(label.id);
-      scheduleResolve();
-    };
-  }, [label.id]);
-
-  useFrame(() => {
-    const v = new Vector3(
-      label.position[0],
-      label.position[1],
-      label.position[2],
-    ).project(camera);
-    // Behind the camera → push far off-screen so it never blocks others.
-    const onScreen = v.z < 1;
-    const cx = (v.x * 0.5 + 0.5) * size.width;
-    const cy = (-v.y * 0.5 + 0.5) * size.height;
-    const el = ref.current;
-    const w = el?.offsetWidth ?? 80;
-    const h = el?.offsetHeight ?? 24;
-    labelRegistry.set(label.id, {
-      id: label.id,
-      priority,
-      cx: onScreen ? cx : -1e6,
-      cy: onScreen ? cy : -1e6,
-      halfW: w / 2 + LABEL_GAP,
-      halfH: h / 2 + LABEL_GAP,
-    });
-    scheduleResolve();
-  });
-
-  return { hidden, ref };
-}
-
 function RoomLabelMarker({ label }: { label: RoomLabel }) {
   const editMode = useAppStore((s) => s.editMode);
   const renameRoomLabel = useAppStore((s) => s.renameRoomLabel);
   const zoomToRoom = useAppStore((s) => s.zoomToRoom);
   const zoomedRoomId = useAppStore((s) => s.zoomedRoomId);
-
-  // Screen-space collision avoidance: every label reports its on-screen
-  // bounding box to a shared manager each frame. The manager keeps the
-  // higher-priority (larger-room) label and hides any lower-priority label
-  // whose box would overlap one already placed — so no two visible labels
-  // ever touch, regardless of how tightly the rooms are packed. Called
-  // unconditionally (before any early return) to satisfy the Rules of Hooks.
-  const { hidden, ref } = useLabelCollision(label);
 
   // When ANY room is zoomed into, hide every floating room label so they
   // don't fight the focused room card for z-index and screen real estate.
@@ -515,21 +379,8 @@ function RoomLabelMarker({ label }: { label: RoomLabel }) {
   // labels just add visual clutter and overlap.
   if (zoomedRoomId && !editMode) return null;
 
-  // In edit mode we never collision-hide — you need to see every room to
-  // rename it. Collision culling only applies to the read-only overview.
-  const collisionHidden = editMode ? false : hidden;
-
   return (
-    <Html
-      position={label.position}
-      center
-      zIndexRange={[40, 0]}
-      style={{
-        opacity: collisionHidden ? 0 : 1,
-        pointerEvents: collisionHidden ? "none" : "auto",
-        transition: "opacity 120ms ease",
-      }}
-    >
+    <Html position={label.position} center zIndexRange={[40, 0]}>
       {editMode ? (
         <input
           autoFocus={false}
@@ -550,7 +401,6 @@ function RoomLabelMarker({ label }: { label: RoomLabel }) {
         // absorbs the pointer event before the volume mesh underneath sees
         // it, so the volume's onClick can silently fail.
         <button
-          ref={ref}
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
