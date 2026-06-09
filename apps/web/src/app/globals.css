@@ -47,6 +47,43 @@
   --phthalo: var(--foreground);
   --obsidian: var(--background);
   --parchment-silver: var(--foreground-soft);
+
+  /* The 3D canvas background. Kept as its own variable so JS can sync the
+     three.js Canvas background to the theme. Replaced in evening mode. */
+  --canvas-bg: #FAF9F8;
+}
+
+/*
+ * Evening (night) mode. The ViewModeProvider toggles
+ * data-mode="evening" on <html> when the dual view enters its evening
+ * window (or admin Force-Evening). Every CSS var below is overridden;
+ * components read from var(--x), so they switch automatically with no
+ * per-component branching.
+ *
+ * Palette principles:
+ *   - background near-black, slightly warm, not pure #000.
+ *   - surface a touch lighter for cards so they stand off the background.
+ *   - primary stays the same blue (recognisable across modes).
+ *   - foreground inverted — soft off-white instead of full white to avoid
+ *     screen-burn on a TV display left on overnight.
+ */
+html[data-mode="evening"] {
+  --primary: #4FA1FF;
+  --primary-strong: #80BBFF;
+  --primary-container: #15263E;
+  --foreground: #F5F2EB;
+  --foreground-soft: #B8B4A8;
+  --muted: #8A8678;
+  --muted-soft: #3A3833;
+  --background: #0F1115;
+  --surface: #1A1D24;
+  --line: #2A2D34;
+  --danger: #FF6B66;
+
+  --complete-bg: #1D3327;
+  --complete-fg: #6CD89A;
+
+  --canvas-bg: #0F1115;
 }
 
 @theme inline {
@@ -71,6 +108,14 @@ body {
   background: var(--surface);
   border: 3px solid var(--foreground);
   border-radius: var(--radius-xl);
+}
+/* Night mode: the chunky ink-black border doesn't work on a dark
+   background. Drop the border weight + use --line so cards read as raised
+   surfaces instead of stencils. */
+html[data-mode="evening"] .blocky-card {
+  border-width: 1px;
+  border-color: var(--line);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .soft-card {
@@ -113,6 +158,13 @@ body {
   transition: background 120ms ease;
 }
 .btn-pill-ghost:hover { background: var(--background); }
+html[data-mode="evening"] .btn-pill-ghost {
+  border-color: var(--line);
+  background: var(--surface);
+}
+html[data-mode="evening"] .btn-pill-ghost:hover {
+  background: var(--primary-container);
+}
 
 /* Legacy class — old dark-glass look reframed as a light bordered chip so
    anything still referencing it blends into the new theme. */

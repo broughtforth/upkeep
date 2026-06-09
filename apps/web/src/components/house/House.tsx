@@ -2,7 +2,7 @@
 
 import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import { Html, OrbitControls, PerspectiveCamera, useGLTF } from "@react-three/drei";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Color, DoubleSide, MeshStandardMaterial, Shape, Vector3 } from "three";
 import type { Mesh as ThreeMesh, MeshStandardMaterial as ThreeStandardMat } from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
@@ -11,15 +11,22 @@ import { RoomFurniture } from "./Furniture";
 import { Residents } from "./Residents";
 import { DragHover } from "./DragHover";
 import { RoomNodes } from "./RoomNodes";
+import { QuarantineTape } from "./QuarantineTape";
+import { FEATURES } from "@/lib/feature-flags";
 
 function HouseModel() {
   const { scene } = useGLTF("/models/house.glb");
   const setCursorPos = useAppStore((s) => s.setCursorPos);
+  const night = useNightMode();
 
-  // Lighten every material on the GLB so the base shell reads paler than
-  // the raw export. Each colour is lerped toward white by ~35%.
+  // Tint every material on the GLB. By day we lerp toward white so the
+  // base reads paler than the raw export; at night we lerp toward the
+  // dark surface tone so the model doesn't blow out against the dark
+  // canvas. We stash each material's original colour the first time we
+  // touch it so the re-tint on mode change starts fresh.
   useEffect(() => {
-    const target = new Color("#ffffff");
+    const target = new Color(night ? "#1A1D24" : "#ffffff");
+    const factor = night ? 0.55 : 0.35;
     scene.traverse((child) => {
       const mesh = child as ThreeMesh;
       if (!mesh.isMesh) return;
@@ -27,12 +34,20 @@ function HouseModel() {
         ? (mesh.material as ThreeStandardMat[])
         : [mesh.material as ThreeStandardMat];
       for (const m of mats) {
-        if (m && (m as { color?: Color }).color) {
-          (m as { color: Color }).color.lerp(target, 0.35);
+        const matWithColor = m as ThreeStandardMat & {
+          color?: Color;
+          userData: { originalColor?: Color };
+        };
+        if (!matWithColor || !matWithColor.color) continue;
+        if (!matWithColor.userData.originalColor) {
+          matWithColor.userData.originalColor = matWithColor.color.clone();
         }
+        matWithColor.color
+          .copy(matWithColor.userData.originalColor)
+          .lerp(target, factor);
       }
     });
-  }, [scene]);
+  }, [scene, night]);
 
   return (
     <primitive
@@ -289,6 +304,39 @@ function RoomVolumes() {
   );
 }
 
+// Biohazard tape ring — auto-wraps every room that has an open deep-clean
+// task due today (template_id prefixed 'dc-'). No toggle, no preview mode;
+// it's a live indicator of the rooms that need quarantining right now.
+// Disappears as soon as the DC task is marked complete.
+function QuarantineTapes() {
+  const roomLabels = useAppStore((s) => s.roomLabels);
+  const instances = useAppStore((s) => s.instances);
+
+  // Whole feature gated off: keep code around but skip rendering.
+  if (!FEATURES.deepClean) return null;
+
+  const dcRoomIds = new Set(
+    instances
+      .filter(
+        (i) =>
+          i.template_id?.startsWith("dc-") && i.status !== "completed",
+      )
+      .map((i) => i.room_id),
+  );
+
+  if (dcRoomIds.size === 0) return null;
+
+  return (
+    <>
+      {roomLabels
+        .filter((label) => dcRoomIds.has(label.id))
+        .map((label) => (
+          <QuarantineTape key={label.id} label={label} />
+        ))}
+    </>
+  );
+}
+
 // Per-room procedural furniture from the previous (now-removed) dollhouse,
 // dropped at each label's centroid. Furniture is anchored to the room's
 // floor (Y=0.15) and sized by the room's bounding-box width/depth.
@@ -325,10 +373,11 @@ function RoomLabelMarker({ label }: { label: RoomLabel }) {
   const zoomToRoom = useAppStore((s) => s.zoomToRoom);
   const zoomedRoomId = useAppStore((s) => s.zoomedRoomId);
 
-  // When this room is the one zoomed into, the RoomNode card already shows
-  // the room's name big. Hide the small label so the two don't stack on
-  // top of each other.
-  if (zoomedRoomId === label.id && !editMode) return null;
+  // When ANY room is zoomed into, hide every floating room label so they
+  // don't fight the focused room card for z-index and screen real estate.
+  // The big card already announces which room is selected; the other
+  // labels just add visual clutter and overlap.
+  if (zoomedRoomId && !editMode) return null;
 
   return (
     <Html position={label.position} center zIndexRange={[40, 0]}>
@@ -378,14 +427,33 @@ function RoomLabels() {
   );
 }
 
+// Track <html data-mode="..."> from inside React. The Canvas can't read CSS
+// variables for *three.js* values (like light intensities), so we mirror
+// the mode here and dim the lights when night mode kicks in.
+function useNightMode() {
+  const [night, setNight] = useState(false);
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const html = document.documentElement;
+    const sync = () =>
+      setNight(html.getAttribute("data-mode") === "evening");
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(html, { attributes: true, attributeFilter: ["data-mode"] });
+    return () => obs.disconnect();
+  }, []);
+  return night;
+}
+
 export function House() {
   const zoomToRoom = useAppStore((s) => s.zoomToRoom);
+  const night = useNightMode();
   return (
     <Canvas
       shadows
       className="!h-full !w-full"
       gl={{ antialias: true }}
-      style={{ background: "#FAF9F8" }}
+      style={{ background: "var(--canvas-bg)" }}
       // Click on empty space outside any room fires this — flies the camera
       // back to the default framing.
       onPointerMissed={() => zoomToRoom(null)}
@@ -393,10 +461,13 @@ export function House() {
       <PerspectiveCamera makeDefault position={[22, 18, 22]} fov={40} near={0.1} far={300} />
 
       <Suspense fallback={null}>
-        <ambientLight intensity={0.9} />
+        {/* Lights are dimmer + warmer at night so the house reads as
+            "after-hours". Sky/ground colours match the dark page palette. */}
+        <ambientLight intensity={night ? 0.35 : 0.9} />
         <directionalLight
           position={[10, 18, 10]}
-          intensity={0.8}
+          intensity={night ? 0.45 : 0.8}
+          color={night ? "#a8b4cf" : "#ffffff"}
           castShadow
           shadow-mapSize={[2048, 2048]}
           shadow-camera-left={-20}
@@ -404,13 +475,21 @@ export function House() {
           shadow-camera-top={20}
           shadow-camera-bottom={-20}
         />
-        <directionalLight position={[-10, 12, -8]} intensity={0.3} />
-        <hemisphereLight intensity={0.4} groundColor="#cbd5e1" color="#ffffff" />
+        <directionalLight
+          position={[-10, 12, -8]}
+          intensity={night ? 0.15 : 0.3}
+        />
+        <hemisphereLight
+          intensity={night ? 0.25 : 0.4}
+          groundColor={night ? "#1A1D24" : "#cbd5e1"}
+          color={night ? "#3A3D52" : "#ffffff"}
+        />
 
         <HouseModel />
         {/* Furniture intentionally not rendered — rooms start empty and we'll
             add pieces one-by-one as the user dictates each room's layout. */}
         <RoomVolumes />
+        <QuarantineTapes />
         <Residents />
         <DragHover />
         <RoomLabels />

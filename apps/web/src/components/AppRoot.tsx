@@ -28,6 +28,25 @@ function accessFor(email: string | undefined | null): Access {
 export function AppRoot() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [profileId, setProfileId] = useState<string | null | undefined>(undefined);
+  // Bypass auth when the URL contains ?dev=1 (or localStorage flag is set).
+  // Lets us preview the admin view without Google login. Toggles by
+  // visiting /?dev=1 once; clear with /?dev=0.
+  const [devBypass, setDevBypass] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const flag = params.get("dev");
+    if (flag === "1") {
+      window.localStorage.setItem("upkeep:devBypass", "1");
+      setDevBypass(true);
+    } else if (flag === "0") {
+      window.localStorage.removeItem("upkeep:devBypass");
+      setDevBypass(false);
+    } else {
+      setDevBypass(window.localStorage.getItem("upkeep:devBypass") === "1");
+    }
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -82,9 +101,18 @@ export function AppRoot() {
     }
   }, [session, access]);
 
-  const signOut = () => void supabase.auth.signOut();
+  const signOut = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("upkeep:devBypass");
+    }
+    void supabase.auth.signOut();
+  };
 
   if (session === undefined) return <Splash />;
+
+  // Dev bypass: jump straight into the admin view without auth.
+  if (devBypass) return <DashboardClient onSignOut={signOut} />;
+
   if (!session) return <LoginScreen />;
 
   if (access === "admin") return <DashboardClient onSignOut={signOut} />;

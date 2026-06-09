@@ -4,6 +4,7 @@ import { Html } from "@react-three/drei";
 import { useAppStore, colorFromString, type RoomLabel } from "@/lib/store";
 import { useCountdown } from "@/lib/countdown";
 import { useViewModeContext } from "@/components/ViewModeProvider";
+import { FEATURES } from "@/lib/feature-flags";
 import type { TaskInstance, TaskTemplate, Profile, RoomType } from "@/lib/types";
 
 // One interactive card shown only for the room currently zoomed into.
@@ -226,7 +227,7 @@ function RoomNodeCard({
         onClick();
       }}
       style={cardStyle}
-      className="blocky-card group/node relative flex w-[240px] cursor-pointer items-center gap-3 px-3 py-3 text-left shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
+      className="blocky-card group/node relative flex w-[320px] cursor-pointer flex-col gap-3 px-5 py-4 text-left shadow-md transition hover:-translate-y-0.5 hover:shadow-lg"
       title={template.name}
     >
       {/* Soft pulse halo on pending */}
@@ -234,78 +235,84 @@ function RoomNodeCard({
         <span className="pointer-events-none absolute inset-0 -z-10 animate-ping rounded-[24px] bg-red-400/25" />
       )}
 
-      {/* Left: glyph in a 38px round badge — same footprint as PersonFigure */}
-      <RoomGlyph type={roomType} complete={allCompleted} />
+      {/* HEADER ROW — glyph + name/state on left, deep-clean chip on right.
+          Each element gets its own column so nothing collides. */}
+      <div className="flex items-start gap-3">
+        <RoomGlyph type={roomType} complete={allCompleted} />
 
-      <div className="min-w-0 flex-1">
-        {/* Top row: room name + state pill + optional deep-clean badge */}
-        <div className="flex items-center gap-1.5">
-          <span
-            className="truncate text-base font-bold leading-tight text-[var(--foreground)]"
+        <div className="min-w-0 flex-1">
+          <div
+            className="truncate text-[19px] font-bold leading-tight text-[var(--foreground)]"
             style={allCompleted ? { color: "var(--complete-fg)" } : undefined}
           >
             {roomName}
-          </span>
-          <span
-            className={`rounded-md px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.18em] ${stateChip.className}`}
-          >
-            {stateChip.label}
-          </span>
-          {deepCleanInstanceId && (
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                selectInstance(deepCleanInstanceId);
-              }}
-              title="Open the deep-clean task"
-              className="rounded-md bg-[#3F3D72] px-1.5 py-px text-[9px] font-bold uppercase tracking-[0.18em] text-white hover:bg-[#2E2D54]"
-            >
-              + Deep clean
-            </button>
-          )}
-        </div>
-
-        {/* Status line — dot + text + meta */}
-        <div className="mt-1.5 flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.12em] text-[var(--foreground-soft)]">
-          <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
-          <span>{statusText}</span>
-          <span className="text-[var(--muted)]">·</span>
-          <span className={`font-mono normal-case tracking-normal ${timeClassName}`}>
-            {timeText}
-          </span>
-          {totalSubtasks > 0 && (
-            <>
-              <span className="text-[var(--muted)]">·</span>
-              <span className="font-mono normal-case tracking-normal text-[var(--muted)]">
-                {doneCount}/{totalSubtasks}
-              </span>
-            </>
-          )}
-        </div>
-
-        {/* Secondary line — assignee or task name. Mirrors the resident
-            card's "→ currentTaskName" pattern. */}
-        {assignee ? (
-          <div
-            className="mt-1.5 flex items-center gap-1.5 truncate text-[13px] font-bold italic"
-            style={{ color: assigneeColor ?? "var(--foreground)" }}
-          >
+          </div>
+          <div className="mt-1.5">
             <span
-              className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
-              style={{ backgroundColor: assigneeColor ?? "#525252" }}
+              className={`inline-block rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] ${stateChip.className}`}
             >
-              {assignee.full_name[0]}
+              {stateChip.label}
             </span>
-            <span className="truncate">{assignee.full_name}</span>
           </div>
-        ) : (
-          <div className="mt-1.5 truncate text-[13px] font-medium italic text-[var(--muted)]">
-            → {template.name}
-          </div>
+        </div>
+
+        {/* Deep-clean chip — gated behind FEATURES.deepClean. */}
+        {FEATURES.deepClean && deepCleanInstanceId && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              selectInstance(deepCleanInstanceId);
+            }}
+            title="Open the deep-clean task"
+            className="flex-shrink-0 self-start whitespace-nowrap rounded-md bg-[#3F3D72] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-white hover:bg-[#2E2D54]"
+          >
+            + Deep Clean
+          </button>
         )}
       </div>
+
+      {/* STATUS ROW — dot + text + meta, all on one horizontal line.
+          Larger size + no-wrap so it can't break mid-pill. */}
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] font-bold uppercase tracking-[0.1em] text-[var(--foreground-soft)]">
+        <span className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
+          <span>{statusText}</span>
+        </span>
+        <span className="text-[var(--muted-soft)]">·</span>
+        <span className={`whitespace-nowrap font-mono normal-case tracking-normal ${timeClassName}`}>
+          {timeText}
+        </span>
+        {totalSubtasks > 0 && (
+          <>
+            <span className="text-[var(--muted-soft)]">·</span>
+            <span className="whitespace-nowrap font-mono normal-case tracking-normal text-[var(--muted)]">
+              {doneCount}/{totalSubtasks}
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* SECONDARY ROW — assignee or task name. Always one truncated line. */}
+      {assignee ? (
+        <div
+          className="flex min-w-0 items-center gap-2 text-[14px] font-bold italic"
+          style={{ color: assigneeColor ?? "var(--foreground)" }}
+        >
+          <span
+            className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
+            style={{ backgroundColor: assigneeColor ?? "#525252" }}
+          >
+            {assignee.full_name[0]}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{assignee.full_name}</span>
+        </div>
+      ) : (
+        <div className="min-w-0 truncate text-[14px] font-medium italic text-[var(--muted)]">
+          → {template.name}
+        </div>
+      )}
     </button>
   );
 }

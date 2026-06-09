@@ -73,5 +73,5 @@ export function viewModeFor(now: Date): ViewModeState {
 }
 
 export function modeLabel(mode: ViewMode): string {
-  return mode === "morning" ? "Morning" : "Evening";
+  return mode === "morning" ? "Morning" : "Night";
 }

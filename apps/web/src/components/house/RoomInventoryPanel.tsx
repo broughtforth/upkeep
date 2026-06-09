@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import { supabase } from "@/lib/supabase-data";
+import { useViewModeContext } from "@/components/ViewModeProvider";
 
 type InventoryRow = {
   id: string;
@@ -26,12 +27,36 @@ export function RoomInventoryPanel() {
   const zoomedRoomId = useAppStore((s) => s.zoomedRoomId);
   const roomLabels = useAppStore((s) => s.roomLabels);
   const zoomToRoom = useAppStore((s) => s.zoomToRoom);
+  const instances = useAppStore((s) => s.instances);
+  const selectInstance = useAppStore((s) => s.selectInstance);
+  const view = useViewModeContext();
 
   const [rows, setRows] = useState<InventoryRow[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Night mode: room click opens the room-reset task dialog instead of
+  // this inventory panel. Find the dc-reset instance for the zoomed room
+  // (template id 'rr-<roomId>') and select it the moment a room is zoomed.
   useEffect(() => {
-    if (!zoomedRoomId) {
+    if (!zoomedRoomId) return;
+    if (view.mode !== "evening") return;
+    const resetInstance = instances.find(
+      (i) =>
+        i.room_id === zoomedRoomId &&
+        i.template_id === `rr-${zoomedRoomId}`,
+    );
+    if (resetInstance) {
+      selectInstance(resetInstance.id);
+      zoomToRoom(null); // release the zoom so we don't see two UIs at once
+    }
+  }, [zoomedRoomId, view.mode, instances, selectInstance, zoomToRoom]);
+
+  // Hide the inventory panel entirely in evening mode — the room click
+  // routes to the reset task above instead.
+  const hidden = view.mode === "evening";
+
+  useEffect(() => {
+    if (!zoomedRoomId || hidden) {
       setRows([]);
       return;
     }
@@ -69,12 +94,24 @@ export function RoomInventoryPanel() {
   }, [zoomedRoomId]);
 
   if (!zoomedRoomId) return null;
+  // Night mode → CompleteDialog handles the room-reset; this panel stays
+  // dormant. (The effect above takes care of opening the dialog and
+  // releasing the zoom.)
+  if (hidden) return null;
 
   const roomName =
     roomLabels.find((r) => r.id === zoomedRoomId)?.name ?? zoomedRoomId;
 
   return (
-    <div className="pointer-events-auto absolute left-5 top-24 z-50 flex h-[440px] max-h-[calc(100vh-7.5rem)] w-[17rem] flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-xl ring-1 ring-black/5">
+    <div className="pointer-events-auto absolute left-5 top-24 z-50 flex max-h-[calc(100vh-7.5rem)] w-[17rem] flex-col overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-xl ring-1 ring-black/5"
+      style={{
+        // Height shrinks to content (header + at most ~6 rows or empty state)
+        // so the panel doesn't dominate the viewport when there's nothing
+        // logged. Tailwind h-fit is overridden by max-h above when full.
+        height: "fit-content",
+        minHeight: rows.length > 0 ? "180px" : "auto",
+      }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-4 pb-2.5 pt-3">
         <div className="min-w-0">
@@ -101,15 +138,15 @@ export function RoomInventoryPanel() {
         </div>
       </div>
 
-      {/* Body — fixed-height region; the list scrolls when there are many
-          items, while loading / empty states sit centred. */}
+      {/* Body — height tracks contents; loading / empty states get their
+          own padding instead of stretching to the fixed parent. */}
       <div className="min-h-0 flex-1 overflow-y-auto border-t border-[var(--line)]">
         {loading ? (
-          <div className="flex h-full items-center justify-center text-[13px] text-[var(--muted)]">
+          <div className="px-4 py-6 text-center text-[13px] text-[var(--muted)]">
             Loading…
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-6 text-center text-[13px] text-[var(--muted)]">
+          <div className="px-6 py-6 text-center text-[13px] text-[var(--muted)]">
             No inventory logged for this room.
           </div>
         ) : (

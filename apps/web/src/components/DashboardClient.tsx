@@ -12,6 +12,7 @@ import {
   ViewModeProvider,
   useViewModeContext,
 } from "@/components/ViewModeProvider";
+import { SwissMoon } from "@/components/SwissMoon";
 import { useAppStore, colorFromString } from "@/lib/store";
 import { supabase } from "@/lib/supabase-data";
 import { modeLabel, type ViewMode } from "@/lib/view-mode";
@@ -161,6 +162,7 @@ function DashboardClientInner({ onSignOut }: { onSignOut?: () => void }) {
 
           {/* Centre-top: dual-view mode banner. Click to override. */}
           <ModeBanner />
+          <SwissMoon />
 
           {/* Top-right control cluster: help (?) + tracking + edit. All
               three share the pill style so they read as one toolbar. */}
@@ -176,15 +178,18 @@ function DashboardClientInner({ onSignOut }: { onSignOut?: () => void }) {
             >
               ?
             </button>
+            {/* Supplies / Tracking get hidden below sm so the toolbar
+                doesn't wrap on phones. They're still reachable from the
+                resident view's menu. */}
             <Link
               href="/supplies"
-              className="btn-pill-ghost"
+              className="btn-pill-ghost hidden sm:inline-flex"
             >
               Supplies
             </Link>
             <Link
               href="/admin"
-              className="btn-pill-ghost"
+              className="btn-pill-ghost hidden sm:inline-flex"
             >
               Tracking
             </Link>
@@ -199,7 +204,7 @@ function DashboardClientInner({ onSignOut }: { onSignOut?: () => void }) {
               {editMode ? "Done" : "Edit"}
             </button>
             {onSignOut && (
-              <button onClick={onSignOut} className="btn-pill-ghost">
+              <button onClick={onSignOut} className="btn-pill-ghost hidden sm:inline-flex">
                 Sign out
               </button>
             )}
@@ -243,8 +248,11 @@ function DashboardClientInner({ onSignOut }: { onSignOut?: () => void }) {
 
         </main>
 
-        {/* Right sidebar — residents. Cream surface, blocky cards. */}
-        <aside className="flex w-72 flex-col border-l border-[var(--line)] bg-[var(--background)]">
+        {/* Right sidebar — residents. Cream surface, blocky cards.
+            Responsive: hidden below 768px (md breakpoint) so the 3D view
+            gets the whole screen on tablets/phones. A future iteration
+            can add a slide-out drawer for narrow screens. */}
+        <aside className="hidden w-64 flex-col border-l border-[var(--line)] bg-[var(--background)] md:flex lg:w-72">
           <PeopleList />
         </aside>
       </div>
@@ -307,7 +315,7 @@ function ModeBanner() {
   };
 
   return (
-    <div className="absolute left-1/2 top-5 z-30 -translate-x-1/2">
+    <div className="absolute bottom-6 left-1/2 z-30 -translate-x-1/2">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -318,29 +326,23 @@ function ModeBanner() {
         >
           {modeLabel(view.mode)}
         </span>
-        {view.override && (
-          <span
-            className={`rounded-full bg-white/30 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider ${tone.fg}`}
-          >
-            Forced
-          </span>
-        )}
         <span
           className={`rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${lockChip.className}`}
         >
           {lockChip.label}
         </span>
-        <span className={`text-sm ${tone.fg}`}>{open ? "▴" : "▾"}</span>
+        {/* Caret flips because the dropdown opens UPWARD now */}
+        <span className={`text-sm ${tone.fg}`}>{open ? "▾" : "▴"}</span>
       </button>
 
       {open && (
         <div
-          className="absolute left-1/2 mt-2 w-64 -translate-x-1/2 overflow-hidden rounded-2xl border-2 border-[var(--foreground)] bg-[var(--surface)] shadow-lg"
+          className="absolute bottom-full left-1/2 mb-2 w-64 -translate-x-1/2 overflow-hidden rounded-2xl border-2 border-[var(--foreground)] bg-[var(--surface)] shadow-lg"
           onMouseLeave={() => setOpen(false)}
         >
           <ModeOption
             label="Auto (time-of-day)"
-            sub="Morning 9-10am · Evening 10-10:30pm"
+            sub="Morning 9-10am · Night 10-10:30pm"
             active={view.override === null}
             onClick={() => setMode(null)}
           />
@@ -351,7 +353,7 @@ function ModeBanner() {
             onClick={() => setMode("morning")}
           />
           <ModeOption
-            label="Force Evening"
+            label="Force Night"
             sub="Laundry · Room reset · Zen setup"
             active={view.override === "evening"}
             onClick={() => setMode("evening")}

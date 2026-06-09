@@ -5,7 +5,8 @@ import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import type { Group, Mesh, MeshStandardMaterial } from "three";
 import type { Profile, Room } from "@/lib/types";
-import { colorFromString } from "@/lib/store";
+import { colorFromString, useAppStore } from "@/lib/store";
+import { FEATURES } from "@/lib/feature-flags";
 
 interface Props {
   profile: Profile;
@@ -18,6 +19,15 @@ const TURN_RATE = 6;        // rad/s — how quickly the figure faces the new di
 const WANDER_PAUSE = 1.6;   // seconds to "clean" before picking a new spot
 const HEAD_SKIN = "#f5d3a8";
 const PANTS_COLOR = "#2a2620";
+
+// Hazmat palette — used when DC preview is on. The torso/arms go bright
+// safety-yellow, legs and shoes go grey rubber, the head is replaced by
+// a grey hood with a translucent visor.
+const HAZMAT_SUIT = "#F4D013";
+const HAZMAT_TRIM = "#0E0E0E";
+const HAZMAT_BOOT = "#3A3833";
+const HAZMAT_HOOD = "#C9C9C5";
+const HAZMAT_VISOR = "#1B3247";
 
 export function Resident({ profile, room, pinPositions }: Props) {
   const groupRef = useRef<Group>(null);
@@ -63,7 +73,27 @@ export function Resident({ profile, room, pinPositions }: Props) {
   const pauseUntil = useRef(0);
   const walkPhase = useRef(0);
 
-  const color = useMemo(() => colorFromString(profile.id), [profile.id]);
+  const personalColor = useMemo(() => colorFromString(profile.id), [profile.id]);
+
+  // Hazmat suits apply automatically whenever this resident is working in
+  // a room that has an open deep-clean task. Gated behind FEATURES.deepClean;
+  // when that flag is off, everyone wears their normal outfit regardless.
+  const instances = useAppStore((s) => s.instances);
+  const hazmat =
+    FEATURES.deepClean &&
+    instances.some(
+      (i) =>
+        i.room_id === room.id &&
+        i.template_id?.startsWith("dc-") &&
+        i.status !== "completed",
+    );
+
+  const suitColor = hazmat ? HAZMAT_SUIT : personalColor;
+  const pantsColor = hazmat ? HAZMAT_TRIM : PANTS_COLOR;
+  const handColor = hazmat ? HAZMAT_SUIT : HEAD_SKIN; // gloves
+  const headColor = hazmat ? HAZMAT_HOOD : HEAD_SKIN;
+  const bootColor = hazmat ? HAZMAT_BOOT : "#181614";
+  const color = personalColor;
 
   // Push the resident's meshes to render *after* the room volume's walls
   // and floor (which use renderOrder=2 + depthTest=false). With higher
@@ -154,12 +184,12 @@ export function Resident({ profile, room, pinPositions }: Props) {
       <group ref={legLRef} position={[-0.06, 0.32, 0]}>
         <mesh position={[0, -0.16, 0]} castShadow>
           <cylinderGeometry args={[0.045, 0.045, 0.32, 10]} />
-          <meshStandardMaterial color={PANTS_COLOR} roughness={0.85} />
+          <meshStandardMaterial color={pantsColor} roughness={0.85} />
         </mesh>
         {/* Shoe */}
         <mesh position={[0, -0.32, 0.02]} castShadow>
           <boxGeometry args={[0.1, 0.05, 0.13]} />
-          <meshStandardMaterial color="#181614" roughness={0.7} />
+          <meshStandardMaterial color={bootColor} roughness={0.7} />
         </mesh>
       </group>
 
@@ -167,30 +197,30 @@ export function Resident({ profile, room, pinPositions }: Props) {
       <group ref={legRRef} position={[0.06, 0.32, 0]}>
         <mesh position={[0, -0.16, 0]} castShadow>
           <cylinderGeometry args={[0.045, 0.045, 0.32, 10]} />
-          <meshStandardMaterial color={PANTS_COLOR} roughness={0.85} />
+          <meshStandardMaterial color={pantsColor} roughness={0.85} />
         </mesh>
         <mesh position={[0, -0.32, 0.02]} castShadow>
           <boxGeometry args={[0.1, 0.05, 0.13]} />
-          <meshStandardMaterial color="#181614" roughness={0.7} />
+          <meshStandardMaterial color={bootColor} roughness={0.7} />
         </mesh>
       </group>
 
-      {/* Torso — capsule in the resident's colour */}
+      {/* Torso — capsule in the resident's colour (or hazmat yellow) */}
       <mesh position={[0, 0.5, 0]} castShadow>
         <capsuleGeometry args={[0.11, 0.22, 6, 12]} />
-        <meshStandardMaterial color={color} roughness={0.55} />
+        <meshStandardMaterial color={suitColor} roughness={0.55} />
       </mesh>
 
       {/* Left arm — pivots at shoulder */}
       <group ref={armLRef} position={[-0.13, 0.6, 0]}>
         <mesh position={[0, -0.13, 0]} castShadow>
           <cylinderGeometry args={[0.035, 0.035, 0.26, 10]} />
-          <meshStandardMaterial color={color} roughness={0.55} />
+          <meshStandardMaterial color={suitColor} roughness={0.55} />
         </mesh>
-        {/* Hand */}
+        {/* Hand / glove */}
         <mesh position={[0, -0.27, 0]} castShadow>
           <sphereGeometry args={[0.045, 10, 10]} />
-          <meshStandardMaterial color={HEAD_SKIN} roughness={0.55} />
+          <meshStandardMaterial color={handColor} roughness={0.55} />
         </mesh>
       </group>
 
@@ -198,31 +228,56 @@ export function Resident({ profile, room, pinPositions }: Props) {
       <group ref={armRRef} position={[0.13, 0.6, 0]}>
         <mesh position={[0, -0.13, 0]} castShadow>
           <cylinderGeometry args={[0.035, 0.035, 0.26, 10]} />
-          <meshStandardMaterial color={color} roughness={0.55} />
+          <meshStandardMaterial color={suitColor} roughness={0.55} />
         </mesh>
         <mesh position={[0, -0.27, 0]} castShadow>
           <sphereGeometry args={[0.045, 10, 10]} />
-          <meshStandardMaterial color={HEAD_SKIN} roughness={0.55} />
+          <meshStandardMaterial color={handColor} roughness={0.55} />
         </mesh>
       </group>
 
-      {/* Neck */}
+      {/* Neck — same as head colour (hood seal) */}
       <mesh position={[0, 0.69, 0]} castShadow>
         <cylinderGeometry args={[0.045, 0.05, 0.04, 12]} />
-        <meshStandardMaterial color={HEAD_SKIN} roughness={0.55} />
+        <meshStandardMaterial color={headColor} roughness={0.55} />
       </mesh>
 
-      {/* Head */}
+      {/* Head / hood */}
       <mesh position={[0, 0.78, 0]} castShadow>
         <sphereGeometry args={[0.095, 16, 16]} />
-        <meshStandardMaterial color={HEAD_SKIN} roughness={0.5} />
+        <meshStandardMaterial color={headColor} roughness={hazmat ? 0.6 : 0.5} />
       </mesh>
 
-      {/* Hair cap — slightly darker, half-sphere on top */}
-      <mesh position={[0, 0.82, -0.005]} castShadow>
-        <sphereGeometry args={[0.097, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
-        <meshStandardMaterial color="#2a2018" roughness={0.7} />
-      </mesh>
+      {/* Hair cap — or a visor when in hazmat */}
+      {hazmat ? (
+        <>
+          {/* Translucent dark-blue visor across the face */}
+          <mesh position={[0, 0.78, 0.06]} rotation={[0, 0, 0]} castShadow>
+            <sphereGeometry
+              args={[0.085, 16, 12, -Math.PI / 2.2, Math.PI / 1.1, Math.PI / 3, Math.PI / 2.5]}
+            />
+            <meshStandardMaterial
+              color={HAZMAT_VISOR}
+              roughness={0.15}
+              metalness={0.2}
+              transparent
+              opacity={0.85}
+            />
+          </mesh>
+          {/* Hood crown — slightly darker dome over the top of the head */}
+          <mesh position={[0, 0.82, -0.005]} castShadow>
+            <sphereGeometry
+              args={[0.099, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.55]}
+            />
+            <meshStandardMaterial color="#9D9D99" roughness={0.7} />
+          </mesh>
+        </>
+      ) : (
+        <mesh position={[0, 0.82, -0.005]} castShadow>
+          <sphereGeometry args={[0.097, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+          <meshStandardMaterial color="#2a2018" roughness={0.7} />
+        </mesh>
+      )}
 
       {/* Floating name label */}
       <Html position={[0, 1.0, 0]} center zIndexRange={[20, 0]}>
