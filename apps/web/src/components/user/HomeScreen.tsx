@@ -22,8 +22,13 @@ type AssignedRow = {
   id: string;
   status: "pending" | "queued" | "assigned" | "completed";
   room: { id: string; name: string } | null;
-  template: { duration_min: number } | null;
+  template: { name: string; category: string; duration_min: number } | null;
 };
+
+// House-wide task categories aren't really tied to the room they're anchored
+// to (laundry runs out of the library/Zen Room, but the resident's tile should
+// read "Laundry round", not "Zen Room"). For these we label by template name.
+const HOUSE_TASK_CATEGORIES = new Set(["laundry"]);
 
 export function HomeScreen({
   currentUserId,
@@ -64,7 +69,7 @@ export function HomeScreen({
     const { data, error } = await supabase
       .from("task_instances")
       .select(
-        "id, status, room:rooms(id, name), template:task_templates(duration_min)",
+        "id, status, room:rooms(id, name), template:task_templates(name, category, duration_min)",
       )
       .eq("assignee_id", currentUserId)
       .in("status", ["assigned", "queued"]);
@@ -77,16 +82,24 @@ export function HomeScreen({
     const rows = (data ?? []) as unknown as AssignedRow[];
 
     // One tile per room (dedupe in case multiple instances per room in future).
+    // House tasks (e.g. laundry) get their own tile keyed by instance, since
+    // they aren't really "the room" — several can share an anchor room.
     const seen = new Set<string>();
     const mapped: AssignedRoom[] = [];
     for (const r of rows) {
       if (!r.room) continue;
-      if (seen.has(r.room.id)) continue;
-      seen.add(r.room.id);
+      const isHouseTask =
+        !!r.template && HOUSE_TASK_CATEGORIES.has(r.template.category);
+      const dedupeKey = isHouseTask ? `house:${r.id}` : r.room.id;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
       mapped.push({
         instanceId: r.id,
         roomId: r.room.id,
-        roomName: r.room.name,
+        // Label house tasks by their template name (e.g. "Laundry round");
+        // everything else by the room name they belong to.
+        roomName:
+          isHouseTask && r.template ? r.template.name : r.room.name,
         durationMin: r.template?.duration_min ?? 15,
       });
     }
