@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAppStore, colorFromString } from "@/lib/store";
 import { supabase } from "@/lib/supabase-data";
-import { useViewModeContext } from "@/components/ViewModeProvider";
 import type { TaskInstance, TaskStatus } from "@/lib/types";
 
 type InventoryRow = {
@@ -44,11 +43,11 @@ export function RoomInventoryPanel() {
   const templates = useAppStore((s) => s.templates);
   const profiles = useAppStore((s) => s.profiles);
   const selectInstance = useAppStore((s) => s.selectInstance);
-  const view = useViewModeContext();
 
-  // Tasks for the zoomed room, filtered to the categories visible in the
-  // current view mode — mirrors the same rule RoomNodes uses for the big
-  // floating card, so the panel list and the card never disagree.
+  // Every task anchored to the zoomed room, regardless of view mode — the
+  // panel is meant to be a full picture of the room, so we show morning,
+  // evening, deep-clean and room-reset tasks together rather than just the
+  // current window's slice.
   const roomTasks = useMemo(() => {
     if (!zoomedRoomId) return [];
     const templateById = new Map(templates.map((t) => [t.id, t]));
@@ -57,41 +56,23 @@ export function RoomInventoryPanel() {
       .map((i) => ({ instance: i, template: templateById.get(i.template_id) }))
       .filter(
         (x): x is { instance: TaskInstance; template: NonNullable<typeof x.template> } =>
-          !!x.template && view.visibleCategories.has(x.template.category),
+          !!x.template,
       )
       .sort((a, b) => {
         // Open work first (pending/assigned), completed sinks to the bottom.
         const rank = (s: TaskStatus) => (s === "completed" ? 1 : 0);
         return rank(a.instance.status) - rank(b.instance.status);
       });
-  }, [zoomedRoomId, instances, templates, view.visibleCategories]);
+  }, [zoomedRoomId, instances, templates]);
 
   const [rows, setRows] = useState<InventoryRow[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Night mode: room click opens the room-reset task dialog instead of
-  // this inventory panel. Find the dc-reset instance for the zoomed room
-  // (template id 'rr-<roomId>') and select it the moment a room is zoomed.
+  // The room panel now opens in every view mode. The room-reset task (and any
+  // other anchored task) shows up in the Tasks list below; clicking it opens
+  // its dialog, so night mode no longer needs to special-case the click.
   useEffect(() => {
-    if (!zoomedRoomId) return;
-    if (view.mode !== "evening") return;
-    const resetInstance = instances.find(
-      (i) =>
-        i.room_id === zoomedRoomId &&
-        i.template_id === `rr-${zoomedRoomId}`,
-    );
-    if (resetInstance) {
-      selectInstance(resetInstance.id);
-      zoomToRoom(null); // release the zoom so we don't see two UIs at once
-    }
-  }, [zoomedRoomId, view.mode, instances, selectInstance, zoomToRoom]);
-
-  // Hide the inventory panel entirely in evening mode — the room click
-  // routes to the reset task above instead.
-  const hidden = view.mode === "evening";
-
-  useEffect(() => {
-    if (!zoomedRoomId || hidden) {
+    if (!zoomedRoomId) {
       setRows([]);
       return;
     }
@@ -129,10 +110,6 @@ export function RoomInventoryPanel() {
   }, [zoomedRoomId]);
 
   if (!zoomedRoomId) return null;
-  // Night mode → CompleteDialog handles the room-reset; this panel stays
-  // dormant. (The effect above takes care of opening the dialog and
-  // releasing the zoom.)
-  if (hidden) return null;
 
   const roomName =
     roomLabels.find((r) => r.id === zoomedRoomId)?.name ?? zoomedRoomId;
