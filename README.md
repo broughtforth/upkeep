@@ -62,6 +62,38 @@ task_templates   (reusable defs: title, category, optional room_id, est. minutes
 task_instances   (one row per template+day: assignee, status, photo_url, scheduled_for)
 ```
 
+## the house integration
+
+The web app exposes a read-only API so the house app can show each
+person's role for the morning (or evening) task round:
+
+```
+GET /api/house/assignments?window=morning|evening|all&date=YYYY-MM-DD
+Authorization: Bearer <HOUSE_API_KEY>
+```
+
+Both query params are optional — defaults are `window=morning` and today's
+date. The response groups today's task instances by assignee:
+
+```jsonc
+{
+  "date": "2026-07-10",
+  "window": "morning",
+  "assignments": [
+    {
+      "person": { "id": "…", "full_name": "…", "role": "resident", "present_today": true },
+      "tasks": [ { "id": "…", "name": "…", "category": "cleaning", "room": { "name": "The Kitchen" }, "status": "assigned", "duration_min": 15 } ],
+      "total_duration_min": 15
+    }
+  ],
+  "unassigned": [ /* tasks nobody has picked up yet */ ]
+}
+```
+
+Set `HOUSE_API_KEY` (a long random shared secret) in `apps/web/.env.local`
+and give the same value to the house app. The route uses the Supabase
+service-role key server-side, so the key check is what protects the data.
+
 ## Conventions
 
 - The mobile app's existing Inventory and Laundry features are dormant (no
