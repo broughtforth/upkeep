@@ -90,6 +90,21 @@ date. The response groups today's task instances by assignee:
 }
 ```
 
+The sync also runs the other way — role decisions made in the house
+app dictate today's assignments here:
+
+```
+POST /api/house/assignments
+Authorization: Bearer <HOUSE_API_KEY>
+{ "assignments": [ { "person_name": "Jane", "cleaning": ["Kitchen"], "restock": ["Cleaning supplies"] } ] }
+```
+
+Cleaning targets are matched to rooms by name (the house's "Bathrooms" covers all
+bathroom-type rooms) and set the assignee on today's cleaning task instances;
+anyone holding a restock duty gets today's supplies tasks (round-robin).
+Completed tasks are never touched. The house app calls this automatically
+whenever an admin changes the duty board.
+
 Set `HOUSE_API_KEY` (a long random shared secret) in `apps/web/.env.local`
 and give the same value to the house app. The route uses the Supabase
 service-role key server-side, so the key check is what protects the data.
