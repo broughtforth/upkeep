@@ -1,0 +1,21 @@
+# Workspaces install their own deps but npm hoists to the root.
+node_modules/
+
+# Build outputs
+.next/
+.expo/
+
+# Vercel project links (contain project/org ids)
+.vercel
+
+# macOS
+.DS_Store
+
+# Editor noise
+*.tsbuildinfo
+
+# Local env files — never commit these. Each app has its own.
+.env
+.env.local
+.env*.local
+.env*

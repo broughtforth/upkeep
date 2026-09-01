@@ -1,0 +1,54 @@
+"use client";
+
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import { useViewMode } from "@/lib/useViewMode";
+import type { ViewMode, ViewModeState } from "@/lib/view-mode";
+
+interface ViewModeContextValue extends ViewModeState {
+  // null = automatic (time-driven); set = admin forced
+  override: ViewMode | null;
+  setOverride: (mode: ViewMode | null) => void;
+}
+
+const ViewModeContext = createContext<ViewModeContextValue | null>(null);
+
+export function ViewModeProvider({ children }: { children: ReactNode }) {
+  const [override, setOverride] = useState<ViewMode | null>(null);
+  const auto = useViewMode(override);
+
+  // Toggle a data-mode attribute on <html> so the CSS palette in
+  // globals.css switches the whole page (incl. the 3D canvas background).
+  // Cleaned up on unmount so the rest of the app doesn't get stuck in
+  // night mode if this provider gets dismounted.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.setAttribute("data-mode", auto.mode);
+    return () => {
+      document.documentElement.removeAttribute("data-mode");
+    };
+  }, [auto.mode]);
+
+  const value = useMemo<ViewModeContextValue>(
+    () => ({ ...auto, override, setOverride }),
+    [auto, override],
+  );
+
+  return (
+    <ViewModeContext.Provider value={value}>
+      {children}
+    </ViewModeContext.Provider>
+  );
+}
+
+export function useViewModeContext(): ViewModeContextValue {
+  const v = useContext(ViewModeContext);
+  if (!v) throw new Error("useViewModeContext must be used inside <ViewModeProvider>");
+  return v;
+}
